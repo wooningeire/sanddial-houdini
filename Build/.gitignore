@@ -1,0 +1,8 @@
+.vs
+CMakeFiles
+CMakeCache.txt
+
+*.log
+
+Release
+x64
