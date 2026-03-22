@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.18)
 
-project(hlsystem CXX)
+project(sanddial CXX)
 
 set(CMAKE_CONFIGURATION_TYPES "Release" CACHE STRING "Limited configurations" FORCE)
 set(CMAKE_BUILD_TYPE "Release" CACHE STRING "Set the build type to Release by default" FORCE)
@@ -27,17 +27,14 @@ include_directories(
 )
 
 set(SOURCE_FILES
-    src/LSystem.cpp
-    src/LSYSTEMPlugin.C
-    src/main.cpp
-    src/vec.cpp
+    src/Register.cpp
+    src/SOP_Sanddial.cpp
+    src/SIM_AreniteSolver.cpp
 )
 
 set(HEADER_FILES
-    src/LSystem.h
-    src/LSYSTEMPlugin.h
-    src/matrix.h
-    src/vec.h
+    src/SOP_Sanddial.h
+    src/SIM_AreniteSolver.h
 )
 
 add_library(${PROJECT_NAME} SHARED ${SOURCE_FILES} ${HEADER_FILES})
