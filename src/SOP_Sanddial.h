@@ -2,6 +2,7 @@
 
 #include <SOP/SOP_Node.h>
 #include <GU/GU_DetailHandle.h>
+#include <GA/GA_Types.h>
 #include <map>
 
 class SOP_Sanddial : public SOP_Node {
@@ -28,4 +29,5 @@ private:
 
     std::map<int, GU_DetailHandle> myFrameCache;
     int myStartFrame = 1;
+    GA_DataId myInputDataId = GA_INVALID_DATAID;
 };

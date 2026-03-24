@@ -121,12 +121,11 @@ OP_ERROR SOP_Sanddial::cookMySop(OP_Context& context) {
         return error();
     }
 
-    // If input changed (e.g. topology), invalidate cache
-    auto startIt = myFrameCache.find(myStartFrame);
-    if (startIt != myFrameCache.end()) {
-        const GU_Detail* cachedStart = startIt->second.gdp();
-        if (cachedStart && cachedStart->getNumPoints() != srcGeo->getNumPoints())
-            myFrameCache.clear();
+    // If input changed (topology, positions, attributes), invalidate cache
+    GA_DataId currentDataId = srcGeo->getP()->getDataId();
+    if (currentDataId != myInputDataId) {
+        myFrameCache.clear();
+        myInputDataId = currentDataId;
     }
 
     GU_DetailHandle result = getFrameResult(frame, srcGeo, fps);
