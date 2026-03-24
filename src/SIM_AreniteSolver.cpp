@@ -33,5 +33,30 @@ SIM_Solver::SIM_Result SIM_AreniteSolver::solveSingleObjectSubclass(SIM_Engine& 
                                                         const SIM_Time& timeStep,
                                                         bool isNewObject) {
     acknowledgedObjects.add(&object);
+
+    fpreal dt = static_cast<fpreal>(timeStep);
+
+    // ── Arenite simulation loop (one step) ──────────────────────────────
+    // 0. Reset per-step transient data.
+    myGeo.resetStepData();
+
+    // 1. Compute stress tensors via MLS-MPM.
+    myMpmSolver.solve(myGeo, dt);
+
+    // 2. Recalculate particle normals (surface detection + KNN).
+    myNormalsSolver.solve(myGeo);
+
+    // 3. Compute wind erosion (deflation + abrasion).
+    myWindSolver.solve(myGeo, dt);
+
+    // 4. Compute fluvial erosion (FastFlow discharge).
+    myWaterSolver.solve(myGeo, dt);
+
+    // 5. Combine erosion and update viabilities.
+    myErosionSolver.solve(myGeo, dt);
+
+    // 6. Deposit eroded particles via gravity routing.
+    myDepositionSolver.solve(myGeo, dt);
+
     return SIM_SOLVER_SUCCESS;
 }

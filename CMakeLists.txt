@@ -30,11 +30,25 @@ set(SOURCE_FILES
     src/Register.cpp
     src/SOP_Sanddial.cpp
     src/SIM_AreniteSolver.cpp
+    src/AreniteGeometry.cpp
+    src/NormalsSolver.cpp
+    src/MpmSolver.cpp
+    src/WindSolver.cpp
+    src/WaterSolver.cpp
+    src/ErosionSolver.cpp
+    src/DepositionSolver.cpp
 )
 
 set(HEADER_FILES
     src/SOP_Sanddial.h
     src/SIM_AreniteSolver.h
+    src/AreniteGeometry.h
+    src/NormalsSolver.h
+    src/MpmSolver.h
+    src/WindSolver.h
+    src/WaterSolver.h
+    src/ErosionSolver.h
+    src/DepositionSolver.h
 )
 
 add_library(${PROJECT_NAME} SHARED ${SOURCE_FILES} ${HEADER_FILES})

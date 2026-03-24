@@ -10,12 +10,54 @@
     <ClCompile Include="C:\Users\V\_\penn\cis6600\sanddial\src\SIM_AreniteSolver.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="C:\Users\V\_\penn\cis6600\sanddial\src\AreniteGeometry.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\V\_\penn\cis6600\sanddial\src\NormalsSolver.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\V\_\penn\cis6600\sanddial\src\MpmSolver.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\V\_\penn\cis6600\sanddial\src\WindSolver.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\V\_\penn\cis6600\sanddial\src\WaterSolver.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\V\_\penn\cis6600\sanddial\src\ErosionSolver.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\V\_\penn\cis6600\sanddial\src\DepositionSolver.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="C:\Users\V\_\penn\cis6600\sanddial\src\SOP_Sanddial.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="C:\Users\V\_\penn\cis6600\sanddial\src\SIM_AreniteSolver.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\V\_\penn\cis6600\sanddial\src\AreniteGeometry.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\V\_\penn\cis6600\sanddial\src\NormalsSolver.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\V\_\penn\cis6600\sanddial\src\MpmSolver.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\V\_\penn\cis6600\sanddial\src\WindSolver.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\V\_\penn\cis6600\sanddial\src\WaterSolver.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\V\_\penn\cis6600\sanddial\src\ErosionSolver.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\V\_\penn\cis6600\sanddial\src\DepositionSolver.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
