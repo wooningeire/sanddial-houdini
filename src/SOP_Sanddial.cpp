@@ -165,67 +165,72 @@ SOP_Sanddial::SOP_Sanddial(OP_Network* net, const char* name, OP_Operator* op)
 
 SOP_Sanddial::~SOP_Sanddial() {}
 
-// ── Particle helpers ────────────────────────────────────────────────────────
-void SOP_Sanddial::initializeParticles(const GU_Detail* inputGeo, GU_Detail* outGeo) {
-    outGeo->clearAndDestroy();
+// ── Simulation helpers ──────────────────────────────────────────────────────
+void SOP_Sanddial::initializeSimulation(const GU_Detail* inputGeo) {
+    // Populate AreniteGeometry from Houdini's input geometry.
+    myGeo.initFromHoudiniGeo(inputGeo);
 
-    // Copy every point from the input
-    GA_Offset srcPt, dstPt;
-    GA_FOR_ALL_PTOFF(inputGeo, srcPt) {
-        dstPt = outGeo->appendPoint();
-        outGeo->setPos3(dstPt, inputGeo->getPos3(srcPt));
-    }
-
-    // Add a velocity attribute, initialized to zero
-    GA_RWHandleV3 velH(outGeo->addFloatTuple(GA_ATTRIB_POINT, "v", 3));
-    if (velH.isValid()) {
-        GA_Offset pt;
-        GA_FOR_ALL_PTOFF(outGeo, pt) {
-            velH.set(pt, UT_Vector3(0, 0, 0));
+    // Initialize erodibility from normalized Y if the input didn't have it.
+    if (!inputGeo->findPointAttribute("erodibility")) {
+        fpreal yMin = 1e18, yMax = -1e18;
+        for (const auto& p : myGeo.particles) {
+            if (p.position.y() < yMin) yMin = p.position.y();
+            if (p.position.y() > yMax) yMax = p.position.y();
+        }
+        fpreal yRange = (yMax - yMin);
+        if (yRange < 1e-9) yRange = 1.0;
+        for (auto& p : myGeo.particles) {
+            p.erodibility = (p.position.y() - yMin) / yRange;
         }
     }
 
-    // Add an erodibility attribute, initialized from normalized Y position.
-    // Compute Y bounds for normalization.
-    fpreal yMin =  1e18, yMax = -1e18;
-    {
-        GA_Offset pt;
-        GA_FOR_ALL_PTOFF(outGeo, pt) {
-            fpreal y = outGeo->getPos3(pt).y();
-            if (y < yMin) yMin = y;
-            if (y > yMax) yMax = y;
-        }
-    }
-    fpreal yRange = (yMax - yMin);
-    if (yRange < 1e-9) yRange = 1.0;
-
-    GA_RWHandleF erodH(outGeo->addFloatTuple(GA_ATTRIB_POINT, "erodibility", 1));
-    if (erodH.isValid()) {
-        GA_Offset pt;
-        GA_FOR_ALL_PTOFF(outGeo, pt) {
-            fpreal y = outGeo->getPos3(pt).y();
-            fpreal t = (y - yMin) / yRange; // 0 at bottom, 1 at top
-            erodH.set(pt, t);
-        }
-    }
+    // Set up the voxel grid.
+    myGeo.initGrid();
 }
 
-void SOP_Sanddial::advanceFrame(GU_Detail* geo, fpreal dt) {
-    const fpreal gravity = -9.81;
+void SOP_Sanddial::advanceFrame(fpreal dt) {
+    // 0. Reset per-step accumulators and grid.
+    myGeo.resetStepData();
 
-    GA_RWHandleV3 velH(geo->findPointAttribute("v"));
-    if (!velH.isValid()) return;
+    // 1. Compute stress tensors via MLS-MPM.
+    myMpmSolver.solve(myGeo, dt);
 
-    GA_Offset ptoff;
-    GA_FOR_ALL_PTOFF(geo, ptoff) {
-        UT_Vector3 vel = velH.get(ptoff);
-        vel.y() += gravity * dt;
-        velH.set(ptoff, vel);
+    // 2. Recalculate particle normals.
+    myNormalsSolver.solve(myGeo);
 
-        UT_Vector3 pos = geo->getPos3(ptoff);
-        pos += vel * dt;
-        geo->setPos3(ptoff, pos);
-    }
+    // 3. Compute wind erosion (deflation + abrasion).
+    myWindSolver.solve(myGeo, dt);
+
+    // 4. Compute fluvial erosion (FastFlow).
+    myWaterSolver.solve(myGeo, dt);
+
+    // 5. Combine erosion and update viabilities.
+    myErosionSolver.solve(myGeo, dt);
+
+    // 6. Deposit eroded particles via gravity routing.
+    myDepositionSolver.solve(myGeo, dt);
+}
+
+void SOP_Sanddial::loadParameters(fpreal t) {
+    // Material
+    myErosionSolver.weakErodibility   = evalFloat("weak_erodibility", 0, t);
+    myErosionSolver.strongErodibility = evalFloat("strong_erodibility", 0, t);
+    myErosionSolver.stressThreshold   = evalFloat("stress_threshold", 0, t);
+    myMpmSolver.youngModulus          = evalFloat("young_modulus", 0, t);
+    myMpmSolver.poissonRatio          = evalFloat("poisson_ratio", 0, t);
+
+    // Environment
+    myWindSolver.windDirection = UT_Vector3(
+        evalFloat("wind_direction", 0, t),
+        evalFloat("wind_direction", 1, t),
+        evalFloat("wind_direction", 2, t));
+    myWindSolver.windSpeed     = evalFloat("wind_speed", 0, t);
+    myWindSolver.turbulence    = evalFloat("turbulence", 0, t);
+    myWaterSolver.precipitation      = evalFloat("precipitation", 0, t);
+    myWaterSolver.criticalShearStress = evalFloat("critical_shear_stress", 0, t);
+
+    // Simulation
+    myGeo.voxelSize = evalFloat("voxel_size", 0, t);
 }
 
 GU_DetailHandle SOP_Sanddial::getFrameResult(int frame, const GU_Detail* inputGeo, fpreal fps) {
@@ -238,21 +243,24 @@ GU_DetailHandle SOP_Sanddial::getFrameResult(int frame, const GU_Detail* inputGe
 
     if (frame <= myStartFrame) {
         // Initialize from input
+        initializeSimulation(inputGeo);
         GU_DetailHandle gdh;
         gdh.allocateAndSet(new GU_Detail());
-        initializeParticles(inputGeo, gdh.gdpNC());
+        myGeo.writeToHoudiniGeo(gdh.gdpNC());
         myFrameCache[frame] = gdh;
         return gdh;
     }
 
     // Make sure previous frame is cached first
-    GU_DetailHandle prevHandle = getFrameResult(frame - 1, inputGeo, fps);
+    getFrameResult(frame - 1, inputGeo, fps);
 
-    // Clone previous frame and advance
+    // Advance the simulation one step
+    advanceFrame(dt);
+
+    // Write result to a new handle
     GU_DetailHandle gdh;
     gdh.allocateAndSet(new GU_Detail());
-    gdh.gdpNC()->copy(*prevHandle.gdp());
-    advanceFrame(gdh.gdpNC(), dt);
+    myGeo.writeToHoudiniGeo(gdh.gdpNC());
 
     myFrameCache[frame] = gdh;
     return gdh;
@@ -293,6 +301,9 @@ OP_ERROR SOP_Sanddial::cookMySop(OP_Context& context) {
         myFrameCache.clear();
         myInputDataId = currentDataId;
     }
+
+    // Load Parameter Pane values into solvers.
+    loadParameters(t);
 
     GU_DetailHandle result = getFrameResult(frame, srcGeo, fps);
 

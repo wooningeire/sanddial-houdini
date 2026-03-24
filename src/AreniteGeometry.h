@@ -4,6 +4,8 @@
 #include <UT/UT_Array.h>
 #include <UT/UT_Matrix3.h>
 
+class GU_Detail;
+
 /// Stores the per-particle simulation state for the Arenite erosion simulation.
 struct AreniteParticle {
     UT_Vector3 position{0, 0, 0};
@@ -38,6 +40,46 @@ struct AreniteParticle {
     }
 };
 
+/// A flat 3D grid used by MPM, normal estimation, flow routing, and
+/// deposition.  Each cell stores a mass, momentum, and velocity for the
+/// MPM transfer as well as an occupancy flag for surface detection.
+struct VoxelCell {
+    fpreal     mass     = 0.0;
+    UT_Vector3 momentum{0, 0, 0};
+    UT_Vector3 velocity{0, 0, 0};
+    UT_Vector3 force{0, 0, 0};
+    bool       occupied = false;
+};
+
+struct VoxelGrid {
+    UT_Array<VoxelCell> cells;
+    int   res[3]  = {0, 0, 0};   ///< Number of cells per axis.
+    fpreal dx     = 0.1;          ///< Cell side length.
+    UT_Vector3 origin{0, 0, 0};  ///< World-space origin (min corner).
+
+    /// Allocate (or re-allocate) grid storage.
+    void allocate(int rx, int ry, int rz, fpreal cellSize, const UT_Vector3& org);
+
+    /// Reset all cell values to zero / default.
+    void clear();
+
+    /// Convert a world-space position to a grid-space index triple.
+    /// Returns false if the position is outside the grid.
+    bool worldToGrid(const UT_Vector3& pos, int& ix, int& iy, int& iz) const;
+
+    /// Flat index from (ix, iy, iz).
+    exint flatIndex(int ix, int iy, int iz) const {
+        return (exint)ix + (exint)res[0] * ((exint)iy + (exint)res[1] * (exint)iz);
+    }
+
+    /// Whether (ix, iy, iz) is within bounds.
+    bool inBounds(int ix, int iy, int iz) const {
+        return ix >= 0 && ix < res[0]
+            && iy >= 0 && iy < res[1]
+            && iz >= 0 && iz < res[2];
+    }
+};
+
 /// Container that owns all particle data and the voxel grids used by the
 /// simulation.  Helper solvers read from / write to this structure each step.
 class AreniteGeometry {
@@ -48,24 +90,28 @@ public:
     // ── Particle data ───────────────────────────────────────────────────────
     UT_Array<AreniteParticle> particles;
 
-    // ── Grid parameters ─────────────────────────────────────────────────────
-    /// Voxel side length shared by MPM, normal-estimation, and flow grids.
+    // ── Grid ────────────────────────────────────────────────────────────────
+    VoxelGrid grid;
+
+    // ── Grid parameters (user settings) ─────────────────────────────────────
     fpreal voxelSize = 0.1;
-
-    /// World-space origin of the simulation domain.
-    UT_Vector3 domainOrigin{0, 0, 0};
-
-    /// Number of grid cells along each axis.
-    int gridResolution[3] = {64, 64, 64};
+    UT_Vector3 domainPadding{1, 1, 1};  ///< Extra padding around particle bounds.
 
     // ── Helpers ─────────────────────────────────────────────────────────────
-    /// Initialise particles from an array of positions (e.g. scattered from
-    /// an input mesh).
+    /// Initialise particles from an array of positions.
     void initFromPositions(const UT_Array<UT_Vector3>& positions);
 
-    /// Reset per-step transient values (erosion accumulators, etc.) before a
-    /// new simulation step.
+    /// Initialise particles from Houdini geometry (reads P, erodibility attr).
+    void initFromHoudiniGeo(const GU_Detail* geo);
+
+    /// Compute domain bounds from current particles and allocate the grid.
+    void initGrid();
+
+    /// Reset per-step transient values (erosion accumulators, etc.).
     void resetStepData();
+
+    /// Write particle state back to a Houdini GU_Detail.
+    void writeToHoudiniGeo(GU_Detail* geo) const;
 
     /// Return the number of non-eroded ("alive") particles.
     int aliveCount() const;

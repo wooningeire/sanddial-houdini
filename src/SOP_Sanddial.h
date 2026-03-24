@@ -5,6 +5,14 @@
 #include <GA/GA_Types.h>
 #include <map>
 
+#include "AreniteGeometry.h"
+#include "NormalsSolver.h"
+#include "MpmSolver.h"
+#include "WindSolver.h"
+#include "WaterSolver.h"
+#include "ErosionSolver.h"
+#include "DepositionSolver.h"
+
 class SOP_Sanddial : public SOP_Node {
 public:
     static OP_Node* myConstructor(OP_Network* net, const char* name, OP_Operator* op);
@@ -17,15 +25,26 @@ protected:
     virtual OP_ERROR cookMySop(OP_Context& context) override;
 
 private:
-    /// Initialize particles from the input geometry's points.
-    void initializeParticles(const GU_Detail* inputGeo, GU_Detail* outGeo);
+    /// Initialize AreniteGeometry from the input Houdini geometry.
+    void initializeSimulation(const GU_Detail* inputGeo);
 
-    /// Advance one frame: apply gravity to all points.
-    void advanceFrame(GU_Detail* geo, fpreal dt);
+    /// Advance one simulation step using the Arenite pipeline.
+    void advanceFrame(fpreal dt);
 
-    /// Ensure the cache contains the result for the given frame,
-    /// simulating forward from the latest cached frame if needed.
+    /// Read Parameter Pane values and configure solvers.
+    void loadParameters(fpreal t);
+
+    /// Ensure the cache contains the result for the given frame.
     GU_DetailHandle getFrameResult(int frame, const GU_Detail* inputGeo, fpreal fps);
+
+    // ── Simulation state ────────────────────────────────────────────────────
+    AreniteGeometry  myGeo;
+    NormalsSolver    myNormalsSolver;
+    MpmSolver        myMpmSolver;
+    WindSolver       myWindSolver;
+    WaterSolver      myWaterSolver;
+    ErosionSolver    myErosionSolver;
+    DepositionSolver myDepositionSolver;
 
     std::map<int, GU_DetailHandle> myFrameCache;
     int myStartFrame = 1;
