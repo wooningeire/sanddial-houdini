@@ -273,6 +273,14 @@ OP_ERROR SOP_Sanddial::cookMySop(OP_Context& context) {
     fpreal fps = OPgetDirector()->getChannelManager()->getSamplesPerSec();
     int frame = (int)SYSrint(t * fps) + 1; // 1-based frame number
 
+    // ── Simulation locking ──────────────────────────────────────────────
+    int simState = evalInt("sim_state", 0, t);
+    if (simState == 0) { // Locked to Frame
+        frame = evalInt("lock_frame", 0, t);
+        if (frame < myStartFrame)
+            frame = myStartFrame;
+    }
+
     const GU_Detail* srcGeo = inputGeo(0, context);
     if (!srcGeo) {
         addError(SOP_MESSAGE, "No input geometry");
