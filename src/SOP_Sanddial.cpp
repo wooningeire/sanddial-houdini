@@ -179,8 +179,33 @@ void SOP_Sanddial::initializeParticles(const GU_Detail* inputGeo, GU_Detail* out
     // Add a velocity attribute, initialized to zero
     GA_RWHandleV3 velH(outGeo->addFloatTuple(GA_ATTRIB_POINT, "v", 3));
     if (velH.isValid()) {
-        GA_FOR_ALL_PTOFF(outGeo, dstPt) {
-            velH.set(dstPt, UT_Vector3(0, 0, 0));
+        GA_Offset pt;
+        GA_FOR_ALL_PTOFF(outGeo, pt) {
+            velH.set(pt, UT_Vector3(0, 0, 0));
+        }
+    }
+
+    // Add an erodibility attribute, initialized from normalized Y position.
+    // Compute Y bounds for normalization.
+    fpreal yMin =  1e18, yMax = -1e18;
+    {
+        GA_Offset pt;
+        GA_FOR_ALL_PTOFF(outGeo, pt) {
+            fpreal y = outGeo->getPos3(pt).y();
+            if (y < yMin) yMin = y;
+            if (y > yMax) yMax = y;
+        }
+    }
+    fpreal yRange = (yMax - yMin);
+    if (yRange < 1e-9) yRange = 1.0;
+
+    GA_RWHandleF erodH(outGeo->addFloatTuple(GA_ATTRIB_POINT, "erodibility", 1));
+    if (erodH.isValid()) {
+        GA_Offset pt;
+        GA_FOR_ALL_PTOFF(outGeo, pt) {
+            fpreal y = outGeo->getPos3(pt).y();
+            fpreal t = (y - yMin) / yRange; // 0 at bottom, 1 at top
+            erodH.set(pt, t);
         }
     }
 }
@@ -268,6 +293,24 @@ OP_ERROR SOP_Sanddial::cookMySop(OP_Context& context) {
     const GU_Detail* resultGeo = result.gdp();
     if (resultGeo)
         gdp->copy(*resultGeo);
+
+    // ── Viewport mode coloring ──────────────────────────────────────────
+    int viewportMode = evalInt("viewport_mode", 0, t);
+    if (viewportMode == 1) { // Erodibility Paint
+        GA_ROHandleF erodH(gdp->findPointAttribute("erodibility"));
+        if (erodH.isValid()) {
+            GA_RWHandleV3 cdH(gdp->addFloatTuple(GA_ATTRIB_POINT, "Cd", 3));
+            if (cdH.isValid()) {
+                GA_Offset ptoff;
+                GA_FOR_ALL_PTOFF(gdp, ptoff) {
+                    fpreal e = SYSclamp(erodH.get(ptoff), 0.0, 1.0);
+                    // Blue (low erodibility / strong) → Red (high / weak)
+                    UT_Vector3 color(e, 0.2 * (1.0 - e), 1.0 - e);
+                    cdH.set(ptoff, color);
+                }
+            }
+        }
+    }
 
     return error();
 }
