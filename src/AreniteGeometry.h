@@ -18,6 +18,9 @@ struct AreniteParticle {
     /// Deformation gradient (for MPM).
     UT_Matrix3  deformationGrad;
 
+    /// APIC affine velocity field (C matrix from MLS-MPM).
+    UT_Matrix3  apicC;
+
     /// User-paintable erodibility coefficient in [0, 1].
     fpreal      erodibility = 1.0;
 
@@ -37,6 +40,7 @@ struct AreniteParticle {
     AreniteParticle() {
         stressTensor.identity();
         deformationGrad.identity();
+        apicC.zero();
     }
 };
 
