@@ -4,7 +4,7 @@
 #include <GU/GU_DetailHandle.h>
 #include <GA/GA_Types.h>
 #include <map>
-
+#include <vector>
 #include "AreniteGeometry.h"
 #include "NormalsSolver.h"
 #include "MpmSolver.h"
@@ -17,6 +17,9 @@ class SOP_Sanddial : public SOP_Node {
 public:
     static OP_Node* myConstructor(OP_Network* net, const char* name, OP_Operator* op);
     static PRM_Template myTemplateList[];
+
+    int performBake(fpreal t);
+    int performResetBake();
 
 protected:
     SOP_Sanddial(OP_Network* net, const char* name, OP_Operator* op);
@@ -47,6 +50,8 @@ private:
     DepositionSolver myDepositionSolver;
 
     std::map<int, GU_DetailHandle> myFrameCache;
+    std::vector<GU_DetailHandle> myBakeHistory;
+    std::vector<int> myBakeFrameHistory;
     int myStartFrame = 1;
     GA_DataId myInputDataId = GA_INVALID_DATAID;
 };

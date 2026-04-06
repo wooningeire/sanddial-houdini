@@ -89,12 +89,19 @@ static PRM_Default prm_lockFrameDefault(1);
 static PRM_Range   prm_lockFrameRange(PRM_RANGE_RESTRICTED, 1.0,
                                       PRM_RANGE_UI, 500.0);
 
-static int bakeCB(void* /*data*/, int /*index*/, fpreal64 /*time*/,
+static int bakeCB(void* data, int /*index*/, fpreal64 time,
                   const PRM_Template* /*tplate*/) {
-    // TODO: Implement bake functionality
-    return 1;
+    SOP_Sanddial* node = static_cast<SOP_Sanddial*>(static_cast<OP_Node*>(data));
+    return node->performBake((fpreal)time);
 }
 static PRM_Name prm_bakeName("bake", "Bake");
+
+static int resetBakeCB(void* data, int /*index*/, fpreal64 /*time*/,
+                       const PRM_Template* /*tplate*/) {
+    SOP_Sanddial* node = static_cast<SOP_Sanddial*>(static_cast<OP_Node*>(data));
+    return node->performResetBake();
+}
+static PRM_Name prm_resetBakeName("reset_bake", "Reset Bake");
 
 // ── Meshing ────────────────────────────────────────────────────────────────
 static PRM_Name    prm_poissonDepthName("poisson_depth", "Poisson Depth");
@@ -111,7 +118,7 @@ static PRM_Name    prm_folderName("folder", "");
 static PRM_Default prm_folderDefaults[] = {
     PRM_Default(6, "Material"),
     PRM_Default(5, "Environment"),
-    PRM_Default(6, "Simulation"),
+    PRM_Default(7, "Simulation"),
     PRM_Default(3, "Meshing"),
 };
 
@@ -147,6 +154,7 @@ PRM_Template SOP_Sanddial::myTemplateList[] = {
     PRM_Template(PRM_INT, 1, &prm_lockFrameName,    &prm_lockFrameDefault,
                  0, &prm_lockFrameRange),
     PRM_Template(PRM_CALLBACK, 1, &prm_bakeName, 0, 0, 0, bakeCB),
+    PRM_Template(PRM_CALLBACK, 1, &prm_resetBakeName, 0, 0, 0, resetBakeCB),
 
     // ── Meshing (3 params) ─────────────────────────────────────────────
     PRM_Template(PRM_INT, 1, &prm_poissonDepthName,  &prm_poissonDepthDefault),
@@ -236,6 +244,68 @@ void SOP_Sanddial::loadParameters(fpreal t) {
     myGeo.voxelSize = evalFloat("voxel_size", 0, t);
 }
 
+// ── Bake / Reset Bake ───────────────────────────────────────────────────────
+int SOP_Sanddial::performBake(fpreal t) {
+    // Only bake when simulation is locked
+    int simState = evalInt("sim_state", 0, t);
+    if (simState != 0) // 0 == "Locked to Frame"
+        return 0;
+
+    int lockFrame = evalInt("lock_frame", 0, t);
+    if (lockFrame < myStartFrame)
+        lockFrame = myStartFrame;
+
+    // Find the cached geometry for the locked frame
+    auto it = myFrameCache.find(lockFrame);
+    if (it == myFrameCache.end())
+        return 0; // frame not yet simulated
+
+    // Push current state onto the history stack
+    GU_DetailHandle bakedGeo;
+    bakedGeo.allocateAndSet(new GU_Detail());
+    const GU_Detail* srcGdp = it->second.gdp();
+    if (srcGdp)
+        bakedGeo.gdpNC()->copy(*srcGdp);
+
+    myBakeHistory.push_back(bakedGeo);
+    myBakeFrameHistory.push_back(myStartFrame);
+
+    // Adopt the baked geometry as the new initial state at frame 1.
+    // This ensures that switching to Live mode and playing from frame 1
+    // immediately begins simulating from the baked particles.
+    myStartFrame = 1;
+    myFrameCache.clear();
+    myFrameCache[myStartFrame] = bakedGeo;
+
+    // Re-initialize internal simulation state from the baked geometry
+    myGeo.initFromHoudiniGeo(bakedGeo.gdp());
+    myGeo.initGrid();
+
+    // Force a recook so the viewport updates
+    forceRecook();
+    return 1;
+}
+
+int SOP_Sanddial::performResetBake() {
+    if (myBakeHistory.empty()) {
+        // Nothing to undo — full reset
+        myStartFrame = 1;
+        myFrameCache.clear();
+        forceRecook();
+        return 1;
+    }
+
+    // Pop the most recent bake
+    myStartFrame = myBakeFrameHistory.back();
+    myBakeFrameHistory.pop_back();
+    myBakeHistory.pop_back();
+
+    // Invalidate the cache so we re-simulate from the restored start
+    myFrameCache.clear();
+    forceRecook();
+    return 1;
+}
+
 GU_DetailHandle SOP_Sanddial::getFrameResult(int frame, const GU_Detail* inputGeo, fpreal fps) {
     // Already cached?
     auto it = myFrameCache.find(frame);
@@ -245,7 +315,18 @@ GU_DetailHandle SOP_Sanddial::getFrameResult(int frame, const GU_Detail* inputGe
     fpreal dt = 1.0 / fps;
 
     if (frame <= myStartFrame) {
-        // Initialize from input
+        // If we have a baked state, initialise from that instead of upstream input
+        if (!myBakeHistory.empty()) {
+            // The most recent bake is already stored in myFrameCache[myStartFrame]
+            auto bakedIt = myFrameCache.find(myStartFrame);
+            if (bakedIt != myFrameCache.end()) {
+                myGeo.initFromHoudiniGeo(bakedIt->second.gdp());
+                myGeo.initGrid();
+                return bakedIt->second;
+            }
+        }
+
+        // Otherwise, initialise from upstream input geometry
         initializeSimulation(inputGeo);
         GU_DetailHandle gdh;
         gdh.allocateAndSet(new GU_Detail());
@@ -299,9 +380,13 @@ OP_ERROR SOP_Sanddial::cookMySop(OP_Context& context) {
     }
 
     // If input changed (topology, positions, attributes), invalidate cache
+    // and discard any baked state since it was derived from old geometry.
     GA_DataId currentDataId = srcGeo->getP()->getDataId();
     if (currentDataId != myInputDataId) {
         myFrameCache.clear();
+        myBakeHistory.clear();
+        myBakeFrameHistory.clear();
+        myStartFrame = 1;
         myInputDataId = currentDataId;
     }
 

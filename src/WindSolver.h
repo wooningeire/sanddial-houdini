@@ -30,7 +30,8 @@ public:
     // ── Deflation parameters (Eq. 12) ───────────────────────────────────────
     /// Deflation constant k_d — accounts for particle size to eroded surface
     /// ratio and characteristic detachment time.
-    fpreal deflationCoeff = 1e-7;
+    /// Default increased internally from realistic 1e-7 to 20.0 to demonstrate erosion rapidly over ~240 frames.
+    fpreal deflationCoeff = 5.0;
 
     /// Internal cohesion coefficient μ_c (Pa) — Mohr-Coulomb model.
     fpreal cohesion = 1e6;
