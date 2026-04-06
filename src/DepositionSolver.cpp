@@ -17,8 +17,13 @@ void DepositionSolver::buildRoutingGraph(const AreniteGeometry& /*geo*/) {
     //       stable cell, recording the route for particle transport.
 }
 
-void DepositionSolver::depositParticles(AreniteGeometry& /*geo*/) {
-    // TODO: For each eroded particle, follow the routing graph to a stable
-    //       cell and place the particle at the surface of that cell.
-    //       Clear the particle's eroded flag and reset its viability.
+void DepositionSolver::depositParticles(AreniteGeometry& geo) {
+    // Placeholder Alpha implementation: teleport eroded particles to y = 0
+    for (auto& p : geo.particles) {
+        if (p.isEroded) {
+            p.position.y() = 0.0f;
+            p.isEroded = false;
+            p.viability = 1.0f;
+        }
+    }
 }

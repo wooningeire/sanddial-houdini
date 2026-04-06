@@ -4,7 +4,7 @@
 
 // Define this to make particles dynamic (gravity, boundary, advection)
 // for debugging MPM behavior. Undefine for normal Arenite (static sandstone).
-#define SANDDIAL_MPM_DEBUG_DYNAMIC
+// #define SANDDIAL_MPM_DEBUG_DYNAMIC
 
 // ── Helper: outer product of two UT_Vector3 → UT_Matrix3 ──────────────────
 static UT_Matrix3 outerProduct(const UT_Vector3& a, const UT_Vector3& b) {

@@ -86,6 +86,8 @@ static PRM_ChoiceList prm_simStateMenu(PRM_CHOICELIST_SINGLE,
 
 static PRM_Name    prm_lockFrameName("lock_frame", "Lock Frame");
 static PRM_Default prm_lockFrameDefault(1);
+static PRM_Range   prm_lockFrameRange(PRM_RANGE_RESTRICTED, 1.0,
+                                      PRM_RANGE_UI, 500.0);
 
 static int bakeCB(void* /*data*/, int /*index*/, fpreal64 /*time*/,
                   const PRM_Template* /*tplate*/) {
@@ -142,7 +144,8 @@ PRM_Template SOP_Sanddial::myTemplateList[] = {
     PRM_Template(PRM_FLT, 1, &prm_voxelSizeName,    &prm_voxelSizeDefault),
     PRM_Template(PRM_FLT_J, 3, &prm_domainSizeName, prm_domainSizeDefaults),
     PRM_Template(PRM_ORD, 1, &prm_simStateName, 0,  &prm_simStateMenu),
-    PRM_Template(PRM_INT, 1, &prm_lockFrameName,    &prm_lockFrameDefault),
+    PRM_Template(PRM_INT, 1, &prm_lockFrameName,    &prm_lockFrameDefault,
+                 0, &prm_lockFrameRange),
     PRM_Template(PRM_CALLBACK, 1, &prm_bakeName, 0, 0, 0, bakeCB),
 
     // ── Meshing (3 params) ─────────────────────────────────────────────
