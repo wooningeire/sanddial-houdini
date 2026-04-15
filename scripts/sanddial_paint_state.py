@@ -94,10 +94,41 @@ class State(object):
         except Exception as e:
             print("Sanddial Paint onDraw error:", e)
 
+    # ── Keyboard ─────────────────────────────────────────────────────────
+
+    def onKeyEvent(self, kwargs):
+        """Handle Escape to exit paint mode and return to View."""
+        try:
+            ui_event = kwargs["ui_event"]
+            key = ui_event.device().keyString()
+            if key == "Esc":
+                # Reset viewport_mode to 0 (View) on the node
+                if self._node:
+                    try:
+                        self._node.parm("viewport_mode").set(0)
+                    except:
+                        pass
+                # Switch back to select/view state
+                self.scene_viewer.setCurrentState("select")
+                return True
+        except:
+            pass
+        return False
+
     # ── Mouse ────────────────────────────────────────────────────────────
 
     def onMouseEvent(self, kwargs):
         try:
+            # Auto-exit if viewport_mode changed to View (0)
+            if self._node:
+                try:
+                    mode = self._node.evalParm("viewport_mode")
+                    if mode == 0:
+                        self.scene_viewer.setCurrentState("select")
+                        return False
+                except:
+                    pass
+
             ui_event = kwargs["ui_event"]
             device = ui_event.device()
             node = self._node
