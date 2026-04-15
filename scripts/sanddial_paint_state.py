@@ -105,12 +105,11 @@ class State(object):
             # Get the mouse ray
             ray_origin, ray_dir = ui_event.ray()
 
-            # Get geometry - try the node and its display child
+            # Get geometry for depth reference
             geo = None
             if node:
                 geo = node.geometry()
                 if geo is None or geo.intrinsicValue("pointcount") == 0:
-                    # Try display node or children
                     try:
                         disp = node.displayNode()
                         if disp:
@@ -133,26 +132,32 @@ class State(object):
                 bbox = geo.boundingBox()
                 center = bbox.center()
 
-                # Intersect ray with horizontal plane at y = center.y
-                if abs(ray_dir[1]) > 1e-6:
-                    t = (center[1] - ray_origin[1]) / ray_dir[1]
+                # Get view direction for a view-aligned plane
+                vp = self.scene_viewer.curViewport()
+                if vp:
+                    view_xform = vp.viewTransform()
+                    view_dir = hou.Vector3(
+                        view_xform.at(2, 0),
+                        view_xform.at(2, 1),
+                        view_xform.at(2, 2),
+                    ).normalized()
+                else:
+                    view_dir = hou.Vector3(0, 0, 1)
+
+                # Intersect ray with a view-aligned plane through the geo center
+                # Plane equation: dot(view_dir, P - center) = 0
+                # Ray: P = ray_origin + t * ray_dir
+                # t = dot(view_dir, center - ray_origin) / dot(view_dir, ray_dir)
+                denom = view_dir.dot(ray_dir)
+                if abs(denom) > 1e-8:
+                    t = view_dir.dot(center - ray_origin) / denom
                     if t > 0:
-                        hit_pos = hou.Vector3(
+                        self._brush_pos = hou.Vector3(
                             ray_origin[0] + ray_dir[0] * t,
                             ray_origin[1] + ray_dir[1] * t,
                             ray_origin[2] + ray_dir[2] * t,
                         )
-                        # Find nearest geometry point
-                        nearest_pt = geo.nearestPoint(hit_pos)
-                        if nearest_pt is not None:
-                            self._brush_pos = nearest_pt.position()
-                            self._brush_normal = hou.Vector3(0, 1, 0)
-                            hit = True
-
-                if not hit:
-                    self._brush_pos = center
-                    self._brush_normal = hou.Vector3(0, 1, 0)
-                    hit = True
+                        hit = True
 
             # Update drawable transform
             radius = 0.5
@@ -171,8 +176,12 @@ class State(object):
                 self._is_painting = True
                 self.scene_viewer.beginStateUndo("Paint Erodibility")
 
-            if self._is_painting and hit:
-                self._apply_brush(node)
+            if self._is_painting and hit and node and geo:
+                # When painting, snap to nearest point for accurate stroke
+                nearest_pt = geo.nearestPoint(self._brush_pos)
+                if nearest_pt is not None:
+                    paint_pos = nearest_pt.position()
+                    self._apply_brush(node, paint_pos)
 
             if not is_lmb and self._is_painting:
                 self._is_painting = False
@@ -242,14 +251,13 @@ class State(object):
         ))
         self._brush_drawable.setTransform(m)
 
-    def _apply_brush(self, node):
+    def _apply_brush(self, node, paint_pos=None):
         """Write brush parameters to the node so the C++ cook applies them."""
         if not node:
             return
+        pos = paint_pos if paint_pos is not None else self._brush_pos
         try:
-            node.parmTuple("brush_pos").set(
-                (self._brush_pos[0], self._brush_pos[1], self._brush_pos[2])
-            )
+            node.parmTuple("brush_pos").set((pos[0], pos[1], pos[2]))
             node.parm("brush_active").set(1)
         except Exception as e:
             print("Sanddial Paint _apply_brush error:", e)
