@@ -218,9 +218,19 @@ class State(object):
     # ── Helpers ──────────────────────────────────────────────────────────
 
     def _update_brush_xform(self, radius):
-        """Position and scale the drawable ring at the brush location."""
-        up = self._brush_normal.normalized()
-        ref = hou.Vector3(0, 0, 1) if abs(up[1]) < 0.99 else hou.Vector3(1, 0, 0)
+        """Position and scale the drawable ring to face the camera."""
+        # Get the camera/view direction from the current viewport
+        vp = self.scene_viewer.curViewport()
+        if vp:
+            view_xform = vp.viewTransform()
+            # The view's Z axis (third row) points from the scene toward the camera
+            # We want the ring normal to face the camera
+            cam_z = hou.Vector3(view_xform.at(2, 0), view_xform.at(2, 1), view_xform.at(2, 2)).normalized()
+        else:
+            cam_z = hou.Vector3(0, 0, 1)
+
+        up = cam_z
+        ref = hou.Vector3(0, 1, 0) if abs(up[1]) < 0.99 else hou.Vector3(1, 0, 0)
         right = up.cross(ref).normalized()
         fwd = right.cross(up).normalized()
 
