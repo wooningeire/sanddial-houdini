@@ -120,9 +120,16 @@ def _viewport_mode_changed(node, parm_tuple=None, **kwargs):
         if viewer is None:
             return
 
+        # Crucial: ensure Scene Viewer is looking at the same network level as the node!
+        try:
+            viewer.setPwd(node.parent())
+        except:
+            pass
+
         # Force out of current view state by resetting to select first
         try:
             viewer.pane().setIsCurrentTab()
+            viewer.setPwd(node.parent())
             viewer.setCurrentState('select')
         except:
             pass
@@ -131,18 +138,15 @@ def _viewport_mode_changed(node, parm_tuple=None, **kwargs):
             node.setSelected(True, clear_all_selected=True)
             node.setCurrent(True, True)
             try:
-                viewer.enterCurrentNodeState()
+                viewer.setPwd(node.parent())
+                viewer.setCurrentState('sop_sanddial_erodibility_paint')
             except Exception as e:
-                print("Sanddial: Failed entering node state:", e)
-                try:
-                    viewer.setCurrentState('V::sanddial::1.0', node=node)
-                except:
-                    pass
+                print("Sanddial: Failed entering paint state:", e)
         elif mode == 2: # Environment Edit
             node.setSelected(True, clear_all_selected=True)
             node.setCurrent(True, True)
             try:
-                viewer.setCurrentState(_ENV_STATE, node=node)
+                viewer.setCurrentState(_ENV_STATE)
             except hou.OperationFailed:
                 print("Sanddial: env state failed.")
         else:           # View (default)
@@ -174,7 +178,8 @@ def _install_callbacks_on_all_nodes():
     """Walk every node already in the scene and wire up Sanddial callbacks."""
     for node in hou.node("/").allSubChildren():
         try:
-            if 'sanddial' in node.type().name().lower() and node.parm('viewport_mode'):
+            # Find ANY node that has a viewport_mode parm
+            if node.parm('viewport_mode') is not None:
                 _install_node_callback(node)
         except Exception:
             pass
@@ -200,14 +205,29 @@ def _startup():
     # 1. Register the environment edit viewer state.
     _load_env_state_from_hda()
 
-    # 2. Wire up the node-creation hook.
+    # 2. Register the erodibility paint viewer state (standalone, not from HDA).
+    try:
+        paint_path = os.path.join(_SCRIPTS_DIR, "sanddial_paint_state.py")
+        if os.path.exists(paint_path):
+            with open(paint_path, "r", encoding="utf-8") as fh:
+                paint_src = fh.read()
+            import types as _t
+            mod = _t.ModuleType('sanddial_paint_state')
+            exec(compile(paint_src, paint_path, 'exec'), mod.__dict__)
+            sys.modules['sanddial_paint_state'] = mod
+            # register() is called automatically on import
+            print("Sanddial startup: loaded paint state")
+    except Exception as e:
+        print("Sanddial startup: failed to load paint state:", e)
+
+    # 3. Wire up the node-creation hook.
     hou.hipFile.addEventCallback(_on_scene_load)
     hou.node("/").addEventCallback(
         (hou.nodeEventType.ChildCreated,),
         _on_node_created,
     )
 
-    # 3. Handle nodes already present in the scene (e.g. on session restore).
+    # 4. Handle nodes already present in the scene (e.g. on session restore).
     _install_callbacks_on_all_nodes()
 
     print("Sanddial startup: complete")
