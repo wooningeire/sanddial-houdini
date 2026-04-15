@@ -10,6 +10,7 @@
 #include <PRM/PRM_Include.h>
 #include <UT/UT_Vector3.h>
 #include <CH/CH_Manager.h>
+#include <SYS/SYS_Math.h>
 
 // ── Viewport Mode ──────────────────────────────────────────────────────────
 static PRM_Name prm_viewportModeName("viewport_mode", "Viewport Mode");
@@ -113,6 +114,40 @@ static PRM_Default prm_poissonScaleDefault(1.1);
 static PRM_Name    prm_subdivIterName("subdiv_iterations", "Subdivision Iterations");
 static PRM_Default prm_subdivIterDefault(2);
 
+// ── Brush ──────────────────────────────────────────────────────────────────
+static PRM_Name    prm_brushActiveName("brush_active", "Apply Brush");
+static PRM_Default prm_brushActiveDefault(0);
+
+static PRM_Name    prm_brushPosName("brush_pos", "Brush Position");
+static PRM_Default prm_brushPosDefaults[] = {
+    PRM_Default(0.0), PRM_Default(0.0), PRM_Default(0.0)
+};
+
+static PRM_Name    prm_brushRadiusName("brush_radius", "Brush Radius");
+static PRM_Default prm_brushRadiusDefault(0.5);
+static PRM_Range   prm_brushRadiusRange(PRM_RANGE_RESTRICTED, 0.001,
+                                        PRM_RANGE_UI, 5.0);
+
+static PRM_Name    prm_brushStrengthName("brush_strength", "Brush Strength");
+static PRM_Default prm_brushStrengthDefault(0.1);
+static PRM_Range   prm_brushStrengthRange(PRM_RANGE_RESTRICTED, 0.0,
+                                          PRM_RANGE_RESTRICTED, 1.0);
+
+static PRM_Name    prm_brushFalloffName("brush_falloff", "Brush Falloff");
+static PRM_Default prm_brushFalloffDefault(2.0);
+static PRM_Range   prm_brushFalloffRange(PRM_RANGE_RESTRICTED, 0.01,
+                                         PRM_RANGE_UI, 5.0);
+
+static PRM_Name prm_brushModeName("brush_mode", "Brush Mode");
+static PRM_Name prm_brushModeChoices[] = {
+    PRM_Name("add",       "Add"),
+    PRM_Name("subtract",  "Subtract"),
+    PRM_Name("overwrite", "Overwrite"),
+    PRM_Name(0)
+};
+static PRM_ChoiceList prm_brushModeMenu(PRM_CHOICELIST_SINGLE,
+                                        prm_brushModeChoices);
+
 // ── Folder Switcher ────────────────────────────────────────────────────────
 static PRM_Name    prm_folderName("folder", "");
 static PRM_Default prm_folderDefaults[] = {
@@ -120,14 +155,16 @@ static PRM_Default prm_folderDefaults[] = {
     PRM_Default(5, "Environment"),
     PRM_Default(7, "Simulation"),
     PRM_Default(3, "Meshing"),
+    PRM_Default(6, "Brush"),    // brush_active, brush_pos, brush_radius,
+                                // brush_strength, brush_falloff, brush_mode
 };
 
 PRM_Template SOP_Sanddial::myTemplateList[] = {
     // Viewport mode selector (outside folders)
     PRM_Template(PRM_ORD, 1, &prm_viewportModeName, 0, &prm_viewportModeMenu),
 
-    // Folder tabs
-    PRM_Template(PRM_SWITCHER, 4, &prm_folderName, prm_folderDefaults),
+    // Folder tabs  (5 tabs now)
+    PRM_Template(PRM_SWITCHER, 5, &prm_folderName, prm_folderDefaults),
 
     // ── Material (6 params) ────────────────────────────────────────────
     PRM_Template(PRM_FLT, 1, &prm_weakErodName,    &prm_weakErodDefault),
@@ -146,7 +183,7 @@ PRM_Template SOP_Sanddial::myTemplateList[] = {
     PRM_Template(PRM_FLT, 1, &prm_precipName,       &prm_precipDefault),
     PRM_Template(PRM_FLT, 1, &prm_critShearName,    &prm_critShearDefault),
 
-    // ── Simulation (6 params) ──────────────────────────────────────────
+    // ── Simulation (7 params) ──────────────────────────────────────────
     PRM_Template(PRM_FLT, 1, &prm_timestepName,     &prm_timestepDefault),
     PRM_Template(PRM_FLT, 1, &prm_voxelSizeName,    &prm_voxelSizeDefault),
     PRM_Template(PRM_FLT_J, 3, &prm_domainSizeName, prm_domainSizeDefaults),
@@ -160,6 +197,17 @@ PRM_Template SOP_Sanddial::myTemplateList[] = {
     PRM_Template(PRM_INT, 1, &prm_poissonDepthName,  &prm_poissonDepthDefault),
     PRM_Template(PRM_FLT, 1, &prm_poissonScaleName,  &prm_poissonScaleDefault),
     PRM_Template(PRM_INT, 1, &prm_subdivIterName,    &prm_subdivIterDefault),
+
+    // ── Brush (6 params) ───────────────────────────────────────────────
+    PRM_Template(PRM_TOGGLE, 1, &prm_brushActiveName, &prm_brushActiveDefault),
+    PRM_Template(PRM_FLT_J, 3, &prm_brushPosName,    prm_brushPosDefaults),
+    PRM_Template(PRM_FLT, 1, &prm_brushRadiusName,   &prm_brushRadiusDefault,
+                 0, &prm_brushRadiusRange),
+    PRM_Template(PRM_FLT, 1, &prm_brushStrengthName, &prm_brushStrengthDefault,
+                 0, &prm_brushStrengthRange),
+    PRM_Template(PRM_FLT, 1, &prm_brushFalloffName,  &prm_brushFalloffDefault,
+                 0, &prm_brushFalloffRange),
+    PRM_Template(PRM_ORD, 1, &prm_brushModeName,     0, &prm_brushModeMenu),
 
     PRM_Template() // sentinel
 };
@@ -271,8 +319,6 @@ int SOP_Sanddial::performBake(fpreal t) {
     myBakeFrameHistory.push_back(myStartFrame);
 
     // Adopt the baked geometry as the new initial state at frame 1.
-    // This ensures that switching to Live mode and playing from frame 1
-    // immediately begins simulating from the baked particles.
     myStartFrame = 1;
     myFrameCache.clear();
     myFrameCache[myStartFrame] = bakedGeo;
@@ -315,39 +361,95 @@ GU_DetailHandle SOP_Sanddial::getFrameResult(int frame, const GU_Detail* inputGe
     fpreal dt = 1.0 / fps;
 
     if (frame <= myStartFrame) {
-        // If we have a baked state, initialise from that instead of upstream input
-        if (!myBakeHistory.empty()) {
-            // The most recent bake is already stored in myFrameCache[myStartFrame]
-            auto bakedIt = myFrameCache.find(myStartFrame);
-            if (bakedIt != myFrameCache.end()) {
-                myGeo.initFromHoudiniGeo(bakedIt->second.gdp());
-                myGeo.initGrid();
-                return bakedIt->second;
-            }
+        // Always use cached initial state if it exists (supports both baked
+        // and painted erodibility that was written back to the start cache).
+        auto startIt = myFrameCache.find(myStartFrame);
+        if (startIt != myFrameCache.end() && startIt->second.gdp()) {
+            myGeo.initFromHoudiniGeo(startIt->second.gdp());
+            myGeo.initGrid();
+            return startIt->second;
         }
 
-        // Otherwise, initialise from upstream input geometry
+        // Otherwise, initialise from upstream input geometry.
         initializeSimulation(inputGeo);
         GU_DetailHandle gdh;
         gdh.allocateAndSet(new GU_Detail());
         myGeo.writeToHoudiniGeo(gdh.gdpNC());
-        myFrameCache[frame] = gdh;
+        myFrameCache[myStartFrame] = gdh;
         return gdh;
     }
 
-    // Make sure previous frame is cached first
+    // Make sure previous frame is cached first.
     getFrameResult(frame - 1, inputGeo, fps);
 
-    // Advance the simulation one step
+    // Advance the simulation one step.
     advanceFrame(dt);
 
-    // Write result to a new handle
+    // Write result to a new handle.
     GU_DetailHandle gdh;
     gdh.allocateAndSet(new GU_Detail());
     myGeo.writeToHoudiniGeo(gdh.gdpNC());
 
     myFrameCache[frame] = gdh;
     return gdh;
+}
+
+// ── Brush application ───────────────────────────────────────────────────────
+void SOP_Sanddial::applyBrushStroke(fpreal t) {
+    UT_Vector3 brushCenter(
+        evalFloat("brush_pos", 0, t),
+        evalFloat("brush_pos", 1, t),
+        evalFloat("brush_pos", 2, t));
+    fpreal radius   = SYSmax(evalFloat("brush_radius",   0, t), fpreal(1e-5));
+    fpreal strength = evalFloat("brush_strength", 0, t);
+    fpreal falloff  = SYSmax(evalFloat("brush_falloff",  0, t), fpreal(0.01));
+    int    bmode    = evalInt  ("brush_mode",     0, t);
+
+    // Load initial-state particles from the cache (or directly from myGeo).
+    AreniteGeometry paintGeo;
+    auto startIt = myFrameCache.find(myStartFrame);
+    if (startIt != myFrameCache.end() && startIt->second.gdp()) {
+        paintGeo.voxelSize = myGeo.voxelSize;
+        paintGeo.initFromHoudiniGeo(startIt->second.gdp());
+    } else {
+        paintGeo = myGeo;
+    }
+
+    fpreal r2 = radius * radius;
+    for (auto& p : paintGeo.particles) {
+        UT_Vector3 diff = p.position - brushCenter;
+        fpreal d2 = diff.dot(diff);
+        if (d2 >= r2) continue;
+
+        fpreal dist  = SYSsqrt(d2);
+        fpreal alpha = fpreal(1.0) - SYSpow(dist / radius, falloff);
+        fpreal delta = alpha * strength;
+
+        if      (bmode == 0) // Add
+            p.erodibility = SYSclamp(p.erodibility + delta, fpreal(0.0), fpreal(1.0));
+        else if (bmode == 1) // Subtract
+            p.erodibility = SYSclamp(p.erodibility - delta, fpreal(0.0), fpreal(1.0));
+        else                  // Overwrite
+            p.erodibility = SYSclamp(delta, fpreal(0.0), fpreal(1.0));
+    }
+
+    // Write the painted state back into the start-frame cache.
+    GU_DetailHandle newStart;
+    newStart.allocateAndSet(new GU_Detail());
+    paintGeo.writeToHoudiniGeo(newStart.gdpNC());
+    myFrameCache[myStartFrame] = newStart;
+
+    // Invalidate all subsequent cached frames: the erodibility change affects
+    // how future frames will erode.
+    for (auto jt = myFrameCache.begin(); jt != myFrameCache.end(); ) {
+        if (jt->first != myStartFrame)
+            jt = myFrameCache.erase(jt);
+        else
+            ++jt;
+    }
+
+    // Sync myGeo so colorization in cookMySop sees the updated erodibilities.
+    myGeo = paintGeo;
 }
 
 // ── Cook ────────────────────────────────────────────────────────────────────
@@ -393,9 +495,21 @@ OP_ERROR SOP_Sanddial::cookMySop(OP_Context& context) {
     // Load Parameter Pane values into solvers.
     loadParameters(t);
 
+    // ── Brush stroke ────────────────────────────────────────────────────
+    // Check before getFrameResult so the first cook after a stroke uses
+    // the updated start cache.
+    int brushActive = evalInt("brush_active", 0, t);
+    if (brushActive) {
+        applyBrushStroke(t);
+        // Reset the flag so we don't re-apply every cook.
+        setInt("brush_active", 0, t, 0);
+        // Force another cook so the viewport shows the updated erodibility.
+        forceRecook();
+    }
+
     GU_DetailHandle result = getFrameResult(frame, srcGeo, fps);
 
-    // Write result into gdp
+    // Write result into gdp.
     gdp->clearAndDestroy();
     const GU_Detail* resultGeo = result.gdp();
     if (resultGeo)

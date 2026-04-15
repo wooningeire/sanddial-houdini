@@ -40,6 +40,10 @@ private:
     /// Ensure the cache contains the result for the given frame.
     GU_DetailHandle getFrameResult(int frame, const GU_Detail* inputGeo, fpreal fps);
 
+    /// Apply a brush stroke to the initial-state particle erodibility.
+    /// Reads brush_pos, brush_radius, brush_strength, brush_falloff, brush_mode.
+    void applyBrushStroke(fpreal t);
+
     // ── Simulation state ────────────────────────────────────────────────────
     AreniteGeometry  myGeo;
     NormalsSolver    myNormalsSolver;
