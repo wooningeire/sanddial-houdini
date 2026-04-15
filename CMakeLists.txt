@@ -60,6 +60,7 @@ target_compile_definitions(${PROJECT_NAME} PRIVATE
     SIZEOF_VOID_P=8
     MAKING_DSO
     HBOOST_ALL_NO_LIB
+    SANDDIAL_ROOT="${CMAKE_SOURCE_DIR}"
 )
 
 link_directories(${HOUDINI_LIB_PATH})

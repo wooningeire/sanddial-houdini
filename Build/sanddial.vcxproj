@@ -58,14 +58,14 @@
       <SupportJustMyCode></SupportJustMyCode>
       <TreatWChar_tAsBuiltInType></TreatWChar_tAsBuiltInType>
       <UseFullPaths>false</UseFullPaths>
-      <PreprocessorDefinitions>%(PreprocessorDefinitions);WIN32;_WINDOWS;NDEBUG;VERSION="";_USE_MATH_DEFINES;SESI_LITTLE_ENDIAN;SIZEOF_VOID_P=8;MAKING_DSO;HBOOST_ALL_NO_LIB;CMAKE_INTDIR="Release";sanddial_EXPORTS</PreprocessorDefinitions>
+      <PreprocessorDefinitions>%(PreprocessorDefinitions);WIN32;_WINDOWS;NDEBUG;VERSION="";_USE_MATH_DEFINES;SESI_LITTLE_ENDIAN;SIZEOF_VOID_P=8;MAKING_DSO;HBOOST_ALL_NO_LIB;SANDDIAL_ROOT="C:/Users/V/_/penn/cis6600/sanddial";CMAKE_INTDIR="Release";sanddial_EXPORTS</PreprocessorDefinitions>
       <ObjectFileName>$(IntDir)</ObjectFileName>
       <DebugInformationFormat>
       </DebugInformationFormat>
       <ScanSourceForModuleDependencies>false</ScanSourceForModuleDependencies>
     </ClCompile>
     <ResourceCompile>
-      <PreprocessorDefinitions>%(PreprocessorDefinitions);WIN32;_WINDOWS;NDEBUG;VERSION=\"\";_USE_MATH_DEFINES;SESI_LITTLE_ENDIAN;SIZEOF_VOID_P=8;MAKING_DSO;HBOOST_ALL_NO_LIB;CMAKE_INTDIR=\"Release\";sanddial_EXPORTS</PreprocessorDefinitions>
+      <PreprocessorDefinitions>%(PreprocessorDefinitions);WIN32;_WINDOWS;NDEBUG;VERSION=\"\";_USE_MATH_DEFINES;SESI_LITTLE_ENDIAN;SIZEOF_VOID_P=8;MAKING_DSO;HBOOST_ALL_NO_LIB;SANDDIAL_ROOT=\"C:/Users/V/_/penn/cis6600/sanddial\";CMAKE_INTDIR=\"Release\";sanddial_EXPORTS</PreprocessorDefinitions>
       <AdditionalIncludeDirectories>C:\Program Files\Side Effects Software\Houdini 21.0.631\toolkit\include;C:\Users\V\_\penn\cis6600\sanddial\.;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ResourceCompile>
     <Midl>

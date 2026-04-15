@@ -58,7 +58,7 @@ struct VoxelCell {
 struct VoxelGrid {
     UT_Array<VoxelCell> cells;
     int   res[3]  = {0, 0, 0};   ///< Number of cells per axis.
-    fpreal dx     = 0.1;          ///< Cell side length.
+    fpreal dx     = 0.025;          ///< Cell side length.
     UT_Vector3 origin{0, 0, 0};  ///< World-space origin (min corner).
 
     /// Allocate (or re-allocate) grid storage.
