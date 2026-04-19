@@ -40,9 +40,9 @@ private:
     /// Ensure the cache contains the result for the given frame.
     GU_DetailHandle getFrameResult(int frame, const GU_Detail* inputGeo, fpreal fps);
 
-    /// Apply a brush stroke to the initial-state particle erodibility.
+    /// Apply a brush stroke to the current simulated state.
     /// Reads brush_pos, brush_radius, brush_strength, brush_falloff, brush_mode.
-    void applyBrushStroke(fpreal t);
+    void applyBrushStroke(fpreal t, int frame);
 
     // ── Simulation state ────────────────────────────────────────────────────
     AreniteGeometry  myGeo;
@@ -57,5 +57,7 @@ private:
     std::vector<GU_DetailHandle> myBakeHistory;
     std::vector<int> myBakeFrameHistory;
     int myStartFrame = 1;
+    int myLastBrushToggle = 0;
     GA_DataId myInputDataId = GA_INVALID_DATAID;
 };
+

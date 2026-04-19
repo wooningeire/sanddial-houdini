@@ -289,7 +289,8 @@ class State(object):
         pos = paint_pos if paint_pos is not None else self._brush_pos
         try:
             node.parmTuple("brush_pos").set((pos[0], pos[1], pos[2]))
-            node.parm("brush_active").set(1)
+            cur_active = node.evalParm("brush_active")
+            node.parm("brush_active").set(1 if cur_active == 0 else 0)
         except Exception as e:
             print("Sanddial Paint _apply_brush error:", e)
 

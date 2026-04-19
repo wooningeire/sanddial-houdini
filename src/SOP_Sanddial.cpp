@@ -395,7 +395,7 @@ GU_DetailHandle SOP_Sanddial::getFrameResult(int frame, const GU_Detail* inputGe
 }
 
 // ── Brush application ───────────────────────────────────────────────────────
-void SOP_Sanddial::applyBrushStroke(fpreal t) {
+void SOP_Sanddial::applyBrushStroke(fpreal t, int frame) {
     UT_Vector3 brushCenter(
         evalFloat("brush_pos", 0, t),
         evalFloat("brush_pos", 1, t),
@@ -405,18 +405,9 @@ void SOP_Sanddial::applyBrushStroke(fpreal t) {
     fpreal falloff  = SYSmax(evalFloat("brush_falloff",  0, t), fpreal(0.01));
     int    bmode    = evalInt  ("brush_mode",     0, t);
 
-    // Load initial-state particles from the cache (or directly from myGeo).
-    AreniteGeometry paintGeo;
-    auto startIt = myFrameCache.find(myStartFrame);
-    if (startIt != myFrameCache.end() && startIt->second.gdp()) {
-        paintGeo.voxelSize = myGeo.voxelSize;
-        paintGeo.initFromHoudiniGeo(startIt->second.gdp());
-    } else {
-        paintGeo = myGeo;
-    }
-
+    // Apply stroke directly to myGeo (already contains current frame state)
     fpreal r2 = radius * radius;
-    for (auto& p : paintGeo.particles) {
+    for (auto& p : myGeo.particles) {
         UT_Vector3 diff = p.position - brushCenter;
         fpreal d2 = diff.dot(diff);
         if (d2 >= r2) continue;
@@ -433,23 +424,19 @@ void SOP_Sanddial::applyBrushStroke(fpreal t) {
             p.erodibility = SYSclamp(delta, fpreal(0.0), fpreal(1.0));
     }
 
-    // Write the painted state back into the start-frame cache.
-    GU_DetailHandle newStart;
-    newStart.allocateAndSet(new GU_Detail());
-    paintGeo.writeToHoudiniGeo(newStart.gdpNC());
-    myFrameCache[myStartFrame] = newStart;
+    // Write the painted state back into the CURRENT frame cache.
+    GU_DetailHandle newResult;
+    newResult.allocateAndSet(new GU_Detail());
+    myGeo.writeToHoudiniGeo(newResult.gdpNC());
+    myFrameCache[frame] = newResult;
 
-    // Invalidate all subsequent cached frames: the erodibility change affects
-    // how future frames will erode.
+    // Invalidate all FUTURE cached frames so they recook from this new state
     for (auto jt = myFrameCache.begin(); jt != myFrameCache.end(); ) {
-        if (jt->first != myStartFrame)
+        if (jt->first > frame)
             jt = myFrameCache.erase(jt);
         else
             ++jt;
     }
-
-    // Sync myGeo so colorization in cookMySop sees the updated erodibilities.
-    myGeo = paintGeo;
 }
 
 // ── Cook ────────────────────────────────────────────────────────────────────
@@ -495,19 +482,18 @@ OP_ERROR SOP_Sanddial::cookMySop(OP_Context& context) {
     // Load Parameter Pane values into solvers.
     loadParameters(t);
 
-    // ── Brush stroke ────────────────────────────────────────────────────
-    // Check before getFrameResult so the first cook after a stroke uses
-    // the updated start cache.
-    int brushActive = evalInt("brush_active", 0, t);
-    if (brushActive) {
-        applyBrushStroke(t);
-        // Reset the flag so we don't re-apply every cook.
-        setInt("brush_active", 0, t, 0);
-        // Force another cook so the viewport shows the updated erodibility.
-        forceRecook();
-    }
-
+    // Ensure the current frame is cached and loaded into myGeo before painting
     GU_DetailHandle result = getFrameResult(frame, srcGeo, fps);
+
+    // ── Brush stroke ────────────────────────────────────────────────────
+    int brushActive = evalInt("brush_active", 0, t);
+    if (brushActive != myLastBrushToggle) {
+        myLastBrushToggle = brushActive;
+        // Edit current frame's geometry and cache
+        applyBrushStroke(t, frame);
+        // Grab the newly painted result
+        result = myFrameCache[frame];
+    }
 
     // Write result into gdp.
     gdp->clearAndDestroy();
