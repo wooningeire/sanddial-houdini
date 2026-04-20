@@ -1,6 +1,20 @@
 #pragma once
 
 #include "AreniteGeometry.h"
+#include <vector>
+
+struct DepCell {
+    int surfaceCount = 0;
+    UT_Vector3 sumNormal{0, 0, 0};
+    fpreal sumY = 0.0;
+    
+    fpreal proxyElevation = 0.0;
+    fpreal averageSlope = 0.0;
+    
+    bool isStable = false;
+    int receiverIdx = -1;
+    int pIdx = -1;
+};
 
 /// Routes eroded particles toward stable cells and deposits them.
 ///
@@ -29,4 +43,6 @@ private:
 
     /// Move each eroded particle along the routing graph and deposit it.
     void depositParticles(AreniteGeometry& geo);
+
+    std::vector<DepCell> m_cellData;
 };
