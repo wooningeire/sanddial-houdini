@@ -60,13 +60,58 @@ void NormalsSolver::solve(AreniteGeometry& geo) {
     }
 }
 
-void NormalsSolver::buildSpatialHash(const AreniteGeometry& /*geo*/) {
-    // TODO: Build a grid-based spatial hash from particle positions for
-    //       efficient neighbor lookups.
+void NormalsSolver::buildSpatialHash(const AreniteGeometry& geo) {
+    m_particleBuckets.clear();
+    m_particleBuckets.resize(geo.grid.cells.entries());
+    for (exint i = 0; i < geo.particles.entries(); ++i) {
+        const auto& p = geo.particles(i);
+        if (p.isEroded) continue;
+        int ix, iy, iz;
+        if (geo.grid.worldToGrid(p.position, ix, iy, iz)) {
+            m_particleBuckets[geo.grid.flatIndex(ix, iy, iz)].push_back(i);
+        }
+    }
 }
 
-UT_Vector3 NormalsSolver::estimateNormal(const AreniteGeometry& /*geo*/, exint /*idx*/) {
-    // TODO: Perform KNN lookup, compute covariance matrix, and return the
-    //       eigenvector corresponding to the smallest eigenvalue.
-    return UT_Vector3(0, 1, 0); // placeholder — up vector
+UT_Vector3 NormalsSolver::estimateNormal(const AreniteGeometry& geo, exint idx) {
+    const auto& p0 = geo.particles(idx);
+    int ix, iy, iz;
+    if (!geo.grid.worldToGrid(p0.position, ix, iy, iz)) return UT_Vector3(0, 1, 0);
+
+    // Collect neighbors from 3x3x3 cell neighborhood
+    std::vector<exint> neighbors;
+    neighbors.reserve(64);
+    for (int dz = -1; dz <= 1; ++dz) {
+        for (int dy = -1; dy <= 1; ++dy) {
+            for (int dx = -1; dx <= 1; ++dx) {
+                int nx = ix + dx;
+                int ny = iy + dy;
+                int nz = iz + dz;
+                if (geo.grid.inBounds(nx, ny, nz)) {
+                    const auto& bucket = m_particleBuckets[geo.grid.flatIndex(nx, ny, nz)];
+                    neighbors.insert(neighbors.end(), bucket.begin(), bucket.end());
+                }
+            }
+        }
+    }
+
+    if (neighbors.size() < 3) return UT_Vector3(0, 1, 0);
+
+    // Compute local centroid. The vector from centroid to particle 
+    // provides a robust estimate for the outward-pointing surface normal.
+    UT_Vector3 centroid(0, 0, 0);
+    for (exint n_idx : neighbors) {
+        centroid += geo.particles(n_idx).position;
+    }
+    centroid /= (fpreal)neighbors.size();
+
+    UT_Vector3 normal = p0.position - centroid;
+    fpreal len = normal.length();
+    if (len < 1e-6) {
+        // If particle is at centroid, fallback to UP (common for flat floors)
+        return UT_Vector3(0, 1, 0);
+    }
+    
+    normal /= len;
+    return normal;
 }

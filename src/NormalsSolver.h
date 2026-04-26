@@ -24,8 +24,7 @@ private:
     /// Build a spatial acceleration structure (e.g. grid hash) from particle
     /// positions.  Called at the start of solve().
     void buildSpatialHash(const AreniteGeometry& geo);
-
-    /// Compute the covariance matrix from the k-nearest neighbors of the
-    /// particle at index @p idx and return the estimated normal.
     UT_Vector3 estimateNormal(const AreniteGeometry& geo, exint idx);
+
+    std::vector<std::vector<exint>> m_particleBuckets;
 };

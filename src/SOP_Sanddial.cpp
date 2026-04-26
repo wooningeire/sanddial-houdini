@@ -245,6 +245,9 @@ void SOP_Sanddial::initializeSimulation(const GU_Detail* inputGeo) {
 
     // Set up the voxel grid.
     myGeo.initGrid();
+
+    // Compute initial normals for surface reconstruction.
+    myNormalsSolver.solve(myGeo);
 }
 
 void SOP_Sanddial::advanceFrame(fpreal dt) {
@@ -355,8 +358,16 @@ int SOP_Sanddial::performResetBake() {
 GU_DetailHandle SOP_Sanddial::getFrameResult(int frame, const GU_Detail* inputGeo, fpreal fps) {
     // Already cached?
     auto it = myFrameCache.find(frame);
-    if (it != myFrameCache.end())
+    if (it != myFrameCache.end()) {
+        const GU_Detail* cachedGdp = it->second.gdp();
+        if (cachedGdp) {
+            myGeo.initFromHoudiniGeo(cachedGdp);
+            myGeo.initGrid();
+            // Re-compute normals for the cached state to ensure mesh alignment
+            myNormalsSolver.solve(myGeo);
+        }
         return it->second;
+    }
 
     fpreal dt = 1.0 / fps;
 
