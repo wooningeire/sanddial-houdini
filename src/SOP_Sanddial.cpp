@@ -457,20 +457,15 @@ OP_ERROR SOP_Sanddial::cookMySop(OP_Context& context) {
         return error();
 
     fpreal t = context.getTime();
-
-    // Tell Houdini this node depends on the current frame so it re-cooks
-    // when the playbar moves.
     flags().setTimeDep(true);
 
     fpreal fps = OPgetDirector()->getChannelManager()->getSamplesPerSec();
-    int frame = (int)SYSrint(t * fps) + 1; // 1-based frame number
+    int frame = (int)SYSrint(t * fps) + 1;
 
-    // ── Simulation locking ──────────────────────────────────────────────
     int simState = evalInt("sim_state", 0, t);
-    if (simState == 0) { // Locked to Frame
+    if (simState == 0) {
         frame = evalInt("lock_frame", 0, t);
-        if (frame < myStartFrame)
-            frame = myStartFrame;
+        if (frame < myStartFrame) frame = myStartFrame;
     }
 
     const GU_Detail* srcGeo = inputGeo(0, context);
@@ -479,8 +474,6 @@ OP_ERROR SOP_Sanddial::cookMySop(OP_Context& context) {
         return error();
     }
 
-    // If input changed (topology, positions, attributes), invalidate cache
-    // and discard any baked state since it was derived from old geometry.
     GA_DataId currentDataId = srcGeo->getP()->getDataId();
     if (currentDataId != myInputDataId) {
         myFrameCache.clear();
@@ -490,42 +483,25 @@ OP_ERROR SOP_Sanddial::cookMySop(OP_Context& context) {
         myInputDataId = currentDataId;
     }
 
-    // Load Parameter Pane values into solvers.
     loadParameters(t);
-
-    // Ensure the current frame is cached and loaded into myGeo before painting
     GU_DetailHandle result = getFrameResult(frame, srcGeo, fps);
 
-    // ── Brush stroke ────────────────────────────────────────────────────
     int brushActive = evalInt("brush_active", 0, t);
     if (brushActive != myLastBrushToggle) {
         myLastBrushToggle = brushActive;
-        // Edit current frame's geometry and cache
         applyBrushStroke(t, frame);
-        // Grab the newly painted result
         result = myFrameCache[frame];
     }
 
-    // Write result into gdp.
+    // Output 0: Particles
     gdp->clearAndDestroy();
     const GU_Detail* resultGeo = result.gdp();
     if (resultGeo)
         gdp->copy(*resultGeo);
 
-    // ── Screened Poisson meshing ──────────────────────────────────────────
-    {
-        int poissonDepth = evalInt("poisson_depth", 0, t);
-        fpreal poissonScale = evalFloat("poisson_scale", 0, t);
-        GU_Detail meshGeo;
-        myMesher.reconstruct(myGeo, &meshGeo, poissonDepth, (float)poissonScale);
-        if (meshGeo.getNumPoints() > 0) {
-            gdp->merge(meshGeo);
-        }
-    }
-
-    // ── Viewport mode coloring ──────────────────────────────────────────
+    // Viewport mode coloring
     int viewportMode = evalInt("viewport_mode", 0, t);
-    if (viewportMode == 1) { // Erodibility Paint
+    if (viewportMode == 1) {
         GA_ROHandleF erodH(gdp->findPointAttribute("erodibility"));
         if (erodH.isValid()) {
             GA_RWHandleV3 cdH(gdp->addFloatTuple(GA_ATTRIB_POINT, "Cd", 3));
@@ -533,7 +509,6 @@ OP_ERROR SOP_Sanddial::cookMySop(OP_Context& context) {
                 GA_Offset ptoff;
                 GA_FOR_ALL_PTOFF(gdp, ptoff) {
                     fpreal e = SYSclamp(erodH.get(ptoff), 0.0, 1.0);
-                    // Blue (low erodibility / strong) → Red (high / weak)
                     UT_Vector3 color(e, 0.2 * (1.0 - e), 1.0 - e);
                     cdH.set(ptoff, color);
                 }
@@ -542,4 +517,48 @@ OP_ERROR SOP_Sanddial::cookMySop(OP_Context& context) {
     }
 
     return error();
+}
+
+GU_DetailHandle SOP_Sanddial::cookMySopOutput(OP_Context& context, int outputidx, SOP_Node* interest) {
+    if (outputidx == 0) {
+        // This is usually handled by cookMySop, but we should return a valid handle if asked.
+        cookMySop(context);
+        GU_Detail* new_gdp = new GU_Detail();
+        new_gdp->copy(*gdp);
+        GU_DetailHandle handle;
+        handle.allocateAndSet(new_gdp);
+        return handle;
+    }
+
+    if (outputidx == 1) {
+        fpreal t = context.getTime();
+        fpreal fps = OPgetDirector()->getChannelManager()->getSamplesPerSec();
+        int frame = (int)SYSrint(t * fps) + 1;
+
+        int simState = evalInt("sim_state", 0, t);
+        if (simState == 0) {
+            frame = evalInt("lock_frame", 0, t);
+            if (frame < myStartFrame) frame = myStartFrame;
+        }
+
+        const GU_Detail* srcGeo = inputGeo(0, context);
+        if (srcGeo) {
+            // Ensure simulation is up to date for the mesh
+            getFrameResult(frame, srcGeo, fps);
+        }
+
+        GU_Detail* meshGdp = new GU_Detail();
+        int poissonDepth = evalInt("poisson_depth", 0, t);
+        fpreal poissonScale = evalFloat("poisson_scale", 0, t);
+
+        // Re-compute normals for meshing
+        myNormalsSolver.solve(myGeo);
+        myMesher.reconstruct(myGeo, meshGdp, poissonDepth, (float)poissonScale);
+
+        GU_DetailHandle handle;
+        handle.allocateAndSet(meshGdp);
+        return handle;
+    }
+
+    return GU_DetailHandle();
 }

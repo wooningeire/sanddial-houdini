@@ -13,7 +13,9 @@ void newSopOperator(OP_OperatorTable* table) {
         1, // Min # of sources
         1, // Max # of sources
         0, // Local variables
-        0  // Flags
+        0, // Flags
+        0, // Variables
+        2  // Number of outputs
     ));
 }
 

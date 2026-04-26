@@ -27,6 +27,7 @@ protected:
     virtual ~SOP_Sanddial();
 
     virtual OP_ERROR cookMySop(OP_Context& context) override;
+    virtual GU_DetailHandle cookMySopOutput(OP_Context& context, int outputidx, SOP_Node* interest) override;
 
 private:
     /// Initialize AreniteGeometry from the input Houdini geometry.
