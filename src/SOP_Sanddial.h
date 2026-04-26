@@ -12,6 +12,7 @@
 #include "WaterSolver.h"
 #include "ErosionSolver.h"
 #include "DepositionSolver.h"
+#include "PoissonMesher.h"
 
 class SOP_Sanddial : public SOP_Node {
 public:
@@ -52,6 +53,7 @@ private:
     WaterSolver      myWaterSolver;
     ErosionSolver    myErosionSolver;
     DepositionSolver myDepositionSolver;
+    PoissonMesher    myMesher;
 
     std::map<int, GU_DetailHandle> myFrameCache;
     std::vector<GU_DetailHandle> myBakeHistory;

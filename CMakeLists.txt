@@ -23,6 +23,7 @@ endif()
 
 include_directories(
     "${HOUDINI_INSTALL_PATH}/toolkit/include"
+    "${CMAKE_SOURCE_DIR}/third_party/PoissonRecon/Src"
     "."
 )
 
@@ -37,6 +38,7 @@ set(SOURCE_FILES
     src/WaterSolver.cpp
     src/ErosionSolver.cpp
     src/DepositionSolver.cpp
+    src/PoissonMesher.cpp
 )
 
 set(HEADER_FILES
@@ -49,6 +51,7 @@ set(HEADER_FILES
     src/WaterSolver.h
     src/ErosionSolver.h
     src/DepositionSolver.h
+    src/PoissonMesher.h
 )
 
 add_library(${PROJECT_NAME} SHARED ${SOURCE_FILES} ${HEADER_FILES})
@@ -60,6 +63,7 @@ target_compile_definitions(${PROJECT_NAME} PRIVATE
     SIZEOF_VOID_P=8
     MAKING_DSO
     HBOOST_ALL_NO_LIB
+    NOMINMAX
     SANDDIAL_ROOT="${CMAKE_SOURCE_DIR}"
 )
 

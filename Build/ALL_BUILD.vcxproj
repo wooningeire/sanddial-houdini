@@ -39,7 +39,7 @@
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <Midl>
-      <AdditionalIncludeDirectories>C:\Program Files\Side Effects Software\Houdini 21.0.631\toolkit\include;C:\Users\V\_\penn\cis6600\sanddial\.;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>C:\Program Files\Side Effects Software\Houdini 21.0.631\toolkit\include;C:\Users\V\_\penn\cis6600\sanddial\third_party\PoissonRecon\Src;C:\Users\V\_\penn\cis6600\sanddial\.;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <OutputDirectory>$(ProjectDir)/$(IntDir)</OutputDirectory>
       <HeaderFileName>%(Filename).h</HeaderFileName>
       <TypeLibraryName>%(Filename).tlb</TypeLibraryName>

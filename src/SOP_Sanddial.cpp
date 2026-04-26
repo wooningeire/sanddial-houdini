@@ -501,6 +501,17 @@ OP_ERROR SOP_Sanddial::cookMySop(OP_Context& context) {
     if (resultGeo)
         gdp->copy(*resultGeo);
 
+    // ── Screened Poisson meshing ──────────────────────────────────────────
+    {
+        int poissonDepth = evalInt("poisson_depth", 0, t);
+        fpreal poissonScale = evalFloat("poisson_scale", 0, t);
+        GU_Detail meshGeo;
+        myMesher.reconstruct(myGeo, &meshGeo, poissonDepth, (float)poissonScale);
+        if (meshGeo.getNumPoints() > 0) {
+            gdp->merge(meshGeo);
+        }
+    }
+
     // ── Viewport mode coloring ──────────────────────────────────────────
     int viewportMode = evalInt("viewport_mode", 0, t);
     if (viewportMode == 1) { // Erodibility Paint

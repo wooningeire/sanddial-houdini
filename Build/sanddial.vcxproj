@@ -42,7 +42,7 @@
   <PropertyGroup />
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
-      <AdditionalIncludeDirectories>C:\Program Files\Side Effects Software\Houdini 21.0.631\toolkit\include;C:\Users\V\_\penn\cis6600\sanddial\.;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>C:\Program Files\Side Effects Software\Houdini 21.0.631\toolkit\include;C:\Users\V\_\penn\cis6600\sanddial\third_party\PoissonRecon\Src;C:\Users\V\_\penn\cis6600\sanddial\.;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <AssemblerListingLocation>$(IntDir)</AssemblerListingLocation>
       <BasicRuntimeChecks>Default</BasicRuntimeChecks>
       <ExceptionHandling>Sync</ExceptionHandling>
@@ -58,18 +58,18 @@
       <SupportJustMyCode></SupportJustMyCode>
       <TreatWChar_tAsBuiltInType></TreatWChar_tAsBuiltInType>
       <UseFullPaths>false</UseFullPaths>
-      <PreprocessorDefinitions>%(PreprocessorDefinitions);WIN32;_WINDOWS;NDEBUG;VERSION="";_USE_MATH_DEFINES;SESI_LITTLE_ENDIAN;SIZEOF_VOID_P=8;MAKING_DSO;HBOOST_ALL_NO_LIB;SANDDIAL_ROOT="C:/Users/V/_/penn/cis6600/sanddial";CMAKE_INTDIR="Release";sanddial_EXPORTS</PreprocessorDefinitions>
+      <PreprocessorDefinitions>%(PreprocessorDefinitions);WIN32;_WINDOWS;NDEBUG;VERSION="";_USE_MATH_DEFINES;SESI_LITTLE_ENDIAN;SIZEOF_VOID_P=8;MAKING_DSO;HBOOST_ALL_NO_LIB;NOMINMAX;SANDDIAL_ROOT="C:/Users/V/_/penn/cis6600/sanddial";CMAKE_INTDIR="Release";sanddial_EXPORTS</PreprocessorDefinitions>
       <ObjectFileName>$(IntDir)</ObjectFileName>
       <DebugInformationFormat>
       </DebugInformationFormat>
       <ScanSourceForModuleDependencies>false</ScanSourceForModuleDependencies>
     </ClCompile>
     <ResourceCompile>
-      <PreprocessorDefinitions>%(PreprocessorDefinitions);WIN32;_WINDOWS;NDEBUG;VERSION=\"\";_USE_MATH_DEFINES;SESI_LITTLE_ENDIAN;SIZEOF_VOID_P=8;MAKING_DSO;HBOOST_ALL_NO_LIB;SANDDIAL_ROOT=\"C:/Users/V/_/penn/cis6600/sanddial\";CMAKE_INTDIR=\"Release\";sanddial_EXPORTS</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>C:\Program Files\Side Effects Software\Houdini 21.0.631\toolkit\include;C:\Users\V\_\penn\cis6600\sanddial\.;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>%(PreprocessorDefinitions);WIN32;_WINDOWS;NDEBUG;VERSION=\"\";_USE_MATH_DEFINES;SESI_LITTLE_ENDIAN;SIZEOF_VOID_P=8;MAKING_DSO;HBOOST_ALL_NO_LIB;NOMINMAX;SANDDIAL_ROOT=\"C:/Users/V/_/penn/cis6600/sanddial\";CMAKE_INTDIR=\"Release\";sanddial_EXPORTS</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>C:\Program Files\Side Effects Software\Houdini 21.0.631\toolkit\include;C:\Users\V\_\penn\cis6600\sanddial\third_party\PoissonRecon\Src;C:\Users\V\_\penn\cis6600\sanddial\.;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ResourceCompile>
     <Midl>
-      <AdditionalIncludeDirectories>C:\Program Files\Side Effects Software\Houdini 21.0.631\toolkit\include;C:\Users\V\_\penn\cis6600\sanddial\.;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>C:\Program Files\Side Effects Software\Houdini 21.0.631\toolkit\include;C:\Users\V\_\penn\cis6600\sanddial\third_party\PoissonRecon\Src;C:\Users\V\_\penn\cis6600\sanddial\.;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <OutputDirectory>$(ProjectDir)/$(IntDir)</OutputDirectory>
       <HeaderFileName>%(Filename).h</HeaderFileName>
       <TypeLibraryName>%(Filename).tlb</TypeLibraryName>
@@ -135,6 +135,7 @@ if %errorlevel% neq 0 goto :VCEnd</Command>
     <ClCompile Include="C:\Users\V\_\penn\cis6600\sanddial\src\WaterSolver.cpp" />
     <ClCompile Include="C:\Users\V\_\penn\cis6600\sanddial\src\ErosionSolver.cpp" />
     <ClCompile Include="C:\Users\V\_\penn\cis6600\sanddial\src\DepositionSolver.cpp" />
+    <ClCompile Include="C:\Users\V\_\penn\cis6600\sanddial\src\PoissonMesher.cpp" />
     <ClInclude Include="C:\Users\V\_\penn\cis6600\sanddial\src\SOP_Sanddial.h" />
     <ClInclude Include="C:\Users\V\_\penn\cis6600\sanddial\src\SIM_AreniteSolver.h" />
     <ClInclude Include="C:\Users\V\_\penn\cis6600\sanddial\src\AreniteGeometry.h" />
@@ -144,6 +145,7 @@ if %errorlevel% neq 0 goto :VCEnd</Command>
     <ClInclude Include="C:\Users\V\_\penn\cis6600\sanddial\src\WaterSolver.h" />
     <ClInclude Include="C:\Users\V\_\penn\cis6600\sanddial\src\ErosionSolver.h" />
     <ClInclude Include="C:\Users\V\_\penn\cis6600\sanddial\src\DepositionSolver.h" />
+    <ClInclude Include="C:\Users\V\_\penn\cis6600\sanddial\src\PoissonMesher.h" />
   </ItemGroup>
   <ItemGroup />
   <ItemGroup>

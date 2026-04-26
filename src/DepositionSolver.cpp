@@ -10,11 +10,6 @@ void DepositionSolver::solve(AreniteGeometry& geo, fpreal dt) {
 }
 
 void DepositionSolver::identifyStableCells(const AreniteGeometry& geo) {
-    // Cannot modify const geometry but we own m_cellData, so wait, identifyStableCells is not const in .h!
-    // Wait, let's check DepositionSolver.h to see if identifyStableCells is const or not.
-    // In DepositionSolver.h:
-    // void identifyStableCells(const AreniteGeometry& geo);
-    // So this is just a normal method, `m_cellData` is a member, so we can modify `m_cellData`.
     m_cellData.clear();
     m_cellData.resize(geo.grid.cells.entries());
 
