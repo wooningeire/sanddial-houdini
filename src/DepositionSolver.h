@@ -31,18 +31,18 @@ public:
     fpreal stableSlopeThreshold = 0.5;
 
     /// Process all eroded particles: route them to stable cells and deposit.
-    void solve(AreniteGeometry& geo, fpreal dt);
+    void solve(AreniteGeometry& geo, fpreal dt, int frame);
 
 private:
     /// Identify which grid cells are "stable" based on average slope.
-    void identifyStableCells(const AreniteGeometry& geo);
+    void identifyStableCells(const AreniteGeometry& geo, const UT_Vector3& offset);
 
     /// Build a routing graph from each cell to the nearest reachable stable
     /// cell.
     void buildRoutingGraph(const AreniteGeometry& geo);
 
     /// Move each eroded particle along the routing graph and deposit it.
-    void depositParticles(AreniteGeometry& geo);
+    void depositParticles(AreniteGeometry& geo, int frame, const UT_Vector3& offset);
 
     std::vector<DepCell> m_cellData;
 };

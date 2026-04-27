@@ -250,7 +250,7 @@ void SOP_Sanddial::initializeSimulation(const GU_Detail* inputGeo) {
     myNormalsSolver.solve(myGeo);
 }
 
-void SOP_Sanddial::advanceFrame(fpreal dt) {
+void SOP_Sanddial::advanceFrame(fpreal dt, int frame) {
     // 0. Reset per-step accumulators and grid.
     myGeo.resetStepData();
 
@@ -270,7 +270,7 @@ void SOP_Sanddial::advanceFrame(fpreal dt) {
     myErosionSolver.solve(myGeo, dt);
 
     // 6. Deposit eroded particles via gravity routing.
-    myDepositionSolver.solve(myGeo, dt);
+    myDepositionSolver.solve(myGeo, dt, frame);
 }
 
 void SOP_Sanddial::loadParameters(fpreal t) {
@@ -394,7 +394,7 @@ GU_DetailHandle SOP_Sanddial::getFrameResult(int frame, const GU_Detail* inputGe
     getFrameResult(frame - 1, inputGeo, fps);
 
     // Advance the simulation one step.
-    advanceFrame(dt);
+    advanceFrame(dt, frame);
 
     // Write result to a new handle.
     GU_DetailHandle gdh;

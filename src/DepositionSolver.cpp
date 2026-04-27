@@ -3,13 +3,19 @@
 #include <random>
 #include <algorithm>
 
-void DepositionSolver::solve(AreniteGeometry& geo, fpreal dt) {
-    identifyStableCells(geo);
+void DepositionSolver::solve(AreniteGeometry& geo, fpreal dt, int frame) {
+    // Calculate a random grid offset for this frame to avoid staircase artifacts
+    // and vertical pillars. This "blurs" the grid over time.
+    std::mt19937 offsetRng(frame * 12345);
+    std::uniform_real_distribution<fpreal> offsetDist(0.0, geo.grid.dx);
+    UT_Vector3 gridOffset(offsetDist(offsetRng), offsetDist(offsetRng), offsetDist(offsetRng));
+
+    identifyStableCells(geo, gridOffset);
     buildRoutingGraph(geo);
-    depositParticles(geo);
+    depositParticles(geo, frame, gridOffset);
 }
 
-void DepositionSolver::identifyStableCells(const AreniteGeometry& geo) {
+void DepositionSolver::identifyStableCells(const AreniteGeometry& geo, const UT_Vector3& offset) {
     m_cellData.clear();
     m_cellData.resize(geo.grid.cells.entries());
 
@@ -18,7 +24,7 @@ void DepositionSolver::identifyStableCells(const AreniteGeometry& geo) {
         if (!p.isSurface || p.isEroded) continue;
         
         int cx, cy, cz;
-        if (geo.grid.worldToGrid(p.position, cx, cy, cz)) {
+        if (geo.grid.worldToGrid(p.position + offset, cx, cy, cz)) {
             exint idx = geo.grid.flatIndex(cx, cy, cz);
             if (idx >= 0 && idx < m_cellData.size()) {
                 m_cellData[idx].surfaceCount++;
@@ -128,15 +134,15 @@ void DepositionSolver::buildRoutingGraph(const AreniteGeometry& geo) {
     }
 }
 
-void DepositionSolver::depositParticles(AreniteGeometry& geo) {
-    std::mt19937 rng(1337);
+void DepositionSolver::depositParticles(AreniteGeometry& geo, int frame, const UT_Vector3& offset) {
+    std::mt19937 rng(frame * 67891);
     std::uniform_real_distribution<fpreal> dist(0.0, geo.grid.dx);
 
     for (auto& p : geo.particles) {
         if (!p.isEroded) continue;
 
         int cx, cy, cz;
-        if (geo.grid.worldToGrid(p.position, cx, cy, cz)) {
+        if (geo.grid.worldToGrid(p.position + offset, cx, cy, cz)) {
             exint idx = geo.grid.flatIndex(cx, cy, cz);
             if (idx >= 0 && idx < m_cellData.size()) {
                 int destIdx = m_cellData[idx].pIdx;
@@ -161,8 +167,9 @@ void DepositionSolver::depositParticles(AreniteGeometry& geo) {
                     p.position.z() = geo.grid.origin.z() + dz * geo.grid.dx + rz;
                     p.position.y() = d_cell.proxyElevation;
                     
-                    // Increment proxy elevation to maintain density and create a pile
-                    d_cell.proxyElevation += geo.grid.dx * 0.1f;
+                    // Increment proxy elevation to maintain density and create a pile.
+                    // We use a much smaller increment to avoid unrealistic pillars.
+                    d_cell.proxyElevation += geo.grid.dx * 0.005f;
                 }
             }
         }

@@ -34,7 +34,7 @@ private:
     void initializeSimulation(const GU_Detail* inputGeo);
 
     /// Advance one simulation step using the Arenite pipeline.
-    void advanceFrame(fpreal dt);
+    void advanceFrame(fpreal dt, int frame);
 
     /// Read Parameter Pane values and configure solvers.
     void loadParameters(fpreal t);

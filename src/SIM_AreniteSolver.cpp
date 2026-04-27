@@ -56,7 +56,9 @@ SIM_Solver::SIM_Result SIM_AreniteSolver::solveSingleObjectSubclass(SIM_Engine& 
     myErosionSolver.solve(myGeo, dt);
 
     // 6. Deposit eroded particles via gravity routing.
-    myDepositionSolver.solve(myGeo, dt);
+    // Use an incrementing counter to ensure a unique seed for each step.
+    static int depositionStepCount = 0;
+    myDepositionSolver.solve(myGeo, dt, depositionStepCount++);
 
     return SIM_SOLVER_SUCCESS;
 }
