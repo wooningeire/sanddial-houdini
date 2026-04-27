@@ -168,13 +168,12 @@ void DepositionSolver::depositParticles(AreniteGeometry& geo, int frame, const U
                     p.position.y() = d_cell.proxyElevation;
                     
                     // Increment proxy elevation to maintain density and create a pile.
-                    // We use a much smaller increment to avoid unrealistic pillars.
                     d_cell.proxyElevation += geo.grid.dx * 0.005f;
+
+                    p.isEroded = false;
+                    p.viability = 1.0f;
                 }
             }
         }
-        
-        p.isEroded = false;
-        p.viability = 1.0f;
     }
 }

@@ -66,6 +66,9 @@ public:
     /// Return the current set of wind particles (for visualization).
     const UT_Array<WindParticle>& getWindParticles() const { return myWindParticles; }
 
+    /// Reset the solver state (e.g. for simulation rewinds).
+    void reset() { myWindParticles.clear(); }
+
 private:
     /// Compute wind deflation for every surface particle (Eq. 12).
     void computeDeflation(AreniteGeometry& geo);

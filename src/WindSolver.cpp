@@ -85,7 +85,7 @@ void WindSolver::computeAbrasion(AreniteGeometry& geo, fpreal dt) {
                         fpreal vMag = wp.vel.length();
                         fpreal dot = -p.normal.dot(wp.vel);
                         if (dot > 0) {
-                            fpreal Wa = abrasionCoeff * vMag * dot * weight;
+                            fpreal Wa = abrasionCoeff * vMag * dot * weight * dt;
                             p.erosionValue += Wa;
                         }
                     }

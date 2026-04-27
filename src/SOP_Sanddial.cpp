@@ -259,6 +259,9 @@ void SOP_Sanddial::initializeSimulation(const GU_Detail* inputGeo) {
 
     // Compute initial normals for surface reconstruction.
     myNormalsSolver.solve(myGeo);
+
+    // Reset transient solver states.
+    myWindSolver.reset();
 }
 
 void SOP_Sanddial::advanceFrame(fpreal dt, int frame) {
@@ -375,7 +378,6 @@ GU_DetailHandle SOP_Sanddial::getFrameResult(int frame, const GU_Detail* inputGe
         const GU_Detail* cachedGdp = it->second.gdp();
         if (cachedGdp) {
             myGeo.initFromHoudiniGeo(cachedGdp);
-            myGeo.initGrid();
             // Re-compute normals for the cached state to ensure mesh alignment
             myNormalsSolver.solve(myGeo);
         }
@@ -390,7 +392,6 @@ GU_DetailHandle SOP_Sanddial::getFrameResult(int frame, const GU_Detail* inputGe
         auto startIt = myFrameCache.find(myStartFrame);
         if (startIt != myFrameCache.end() && startIt->second.gdp()) {
             myGeo.initFromHoudiniGeo(startIt->second.gdp());
-            myGeo.initGrid();
             return startIt->second;
         }
 

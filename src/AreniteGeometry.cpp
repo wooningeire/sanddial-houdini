@@ -51,10 +51,26 @@ void AreniteGeometry::initFromPositions(const UT_Array<UT_Vector3>& positions) {
 void AreniteGeometry::initFromHoudiniGeo(const GU_Detail* geo) {
     if (!geo) return;
 
+    // Load grid configuration from detail attributes if present
+    GA_ROHandleI resH(geo->findAttribute(GA_ATTRIB_DETAIL, "grid_res"));
+    GA_ROHandleF dxH(geo->findAttribute(GA_ATTRIB_DETAIL, "grid_dx"));
+    GA_ROHandleV3 orgH(geo->findAttribute(GA_ATTRIB_DETAIL, "grid_origin"));
+
+    if (resH.isValid() && dxH.isValid() && orgH.isValid()) {
+        int rx = resH.get(GA_Offset(0), 0);
+        int ry = resH.get(GA_Offset(0), 1);
+        int rz = resH.get(GA_Offset(0), 2);
+        grid.allocate(rx, ry, rz, dxH.get(GA_Offset(0)), orgH.get(GA_Offset(0)));
+    }
+
     exint npts = geo->getNumPoints();
     particles.setSize(npts);
 
     GA_ROHandleF erodH(geo->findPointAttribute("erodibility"));
+    GA_ROHandleV3 velH(geo->findPointAttribute("v"));
+    GA_ROHandleF viabH(geo->findPointAttribute("viability"));
+    GA_ROHandleF defGradH(geo->findPointAttribute("deformationGrad"));
+    GA_ROHandleF apicCH(geo->findPointAttribute("apicC"));
 
     exint idx = 0;
     GA_Offset ptoff;
@@ -62,8 +78,23 @@ void AreniteGeometry::initFromHoudiniGeo(const GU_Detail* geo) {
         AreniteParticle& p = particles[idx];
         p = AreniteParticle();
         p.position  = geo->getPos3(ptoff);
-        p.viability = 1.0;
-        p.erodibility = erodH.isValid() ? erodH.get(ptoff) : 1.0;
+        
+        if (erodH.isValid()) p.erodibility = erodH.get(ptoff);
+        if (velH.isValid())  p.velocity    = velH.get(ptoff);
+        if (viabH.isValid()) p.viability   = viabH.get(ptoff);
+
+        if (defGradH.isValid() && defGradH.getTupleSize() == 9) {
+            for (int i = 0; i < 3; ++i)
+                for (int j = 0; j < 3; ++j)
+                    p.deformationGrad(i, j) = defGradH.get(ptoff, i * 3 + j);
+        }
+
+        if (apicCH.isValid() && apicCH.getTupleSize() == 9) {
+            for (int i = 0; i < 3; ++i)
+                for (int j = 0; j < 3; ++j)
+                    p.apicC(i, j) = apicCH.get(ptoff, i * 3 + j);
+        }
+
         ++idx;
     }
 }
@@ -111,10 +142,25 @@ void AreniteGeometry::writeToHoudiniGeo(GU_Detail* geo) const {
 
     geo->clearAndDestroy();
 
+    // Save grid configuration as detail attributes
+    GA_RWHandleI resH(geo->addIntTuple(GA_ATTRIB_DETAIL, "grid_res", 3));
+    GA_RWHandleF dxH(geo->addFloatTuple(GA_ATTRIB_DETAIL, "grid_dx", 1));
+    GA_RWHandleV3 orgH(geo->addFloatTuple(GA_ATTRIB_DETAIL, "grid_origin", 3));
+
+    if (resH.isValid()) {
+        resH.set(GA_Offset(0), 0, grid.res[0]);
+        resH.set(GA_Offset(0), 1, grid.res[1]);
+        resH.set(GA_Offset(0), 2, grid.res[2]);
+    }
+    if (dxH.isValid()) dxH.set(GA_Offset(0), grid.dx);
+    if (orgH.isValid()) orgH.set(GA_Offset(0), grid.origin);
+
     // Create point attributes.
     GA_RWHandleV3 velH(geo->addFloatTuple(GA_ATTRIB_POINT, "v", 3));
     GA_RWHandleF  erodH(geo->addFloatTuple(GA_ATTRIB_POINT, "erodibility", 1));
     GA_RWHandleF  viabH(geo->addFloatTuple(GA_ATTRIB_POINT, "viability", 1));
+    GA_RWHandleF  defGradH(geo->addFloatTuple(GA_ATTRIB_POINT, "deformationGrad", 9));
+    GA_RWHandleF  apicCH(geo->addFloatTuple(GA_ATTRIB_POINT, "apicC", 9));
 
     for (const auto& p : particles) {
         if (p.isEroded)
@@ -126,6 +172,18 @@ void AreniteGeometry::writeToHoudiniGeo(GU_Detail* geo) const {
         if (velH.isValid())  velH.set(pt, p.velocity);
         if (erodH.isValid()) erodH.set(pt, p.erodibility);
         if (viabH.isValid()) viabH.set(pt, p.viability);
+
+        if (defGradH.isValid()) {
+            for (int i = 0; i < 3; ++i)
+                for (int j = 0; j < 3; ++j)
+                    defGradH.set(pt, i * 3 + j, p.deformationGrad(i, j));
+        }
+
+        if (apicCH.isValid()) {
+            for (int i = 0; i < 3; ++i)
+                for (int j = 0; j < 3; ++j)
+                    apicCH.set(pt, i * 3 + j, p.apicC(i, j));
+        }
     }
 }
 
