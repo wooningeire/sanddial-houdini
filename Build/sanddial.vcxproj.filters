@@ -34,6 +34,9 @@
     <ClCompile Include="C:\Users\V\_\penn\cis6600\sanddial\src\PoissonMesher.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="C:\Users\V\_\penn\cis6600\sanddial\src\LS3Subdiv.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="C:\Users\V\_\penn\cis6600\sanddial\src\SOP_Sanddial.h">
@@ -64,6 +67,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="C:\Users\V\_\penn\cis6600\sanddial\src\PoissonMesher.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\V\_\penn\cis6600\sanddial\src\LS3Subdiv.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

@@ -602,6 +602,11 @@ GU_DetailHandle SOP_Sanddial::cookMySopOutput(OP_Context& context, int outputidx
         myNormalsSolver.solve(myGeo);
         myMesher.reconstruct(myGeo, meshGdp, poissonDepth, (float)poissonScale);
 
+        int subdivIter = evalInt("subdiv_iterations", 0, t);
+        if (subdivIter > 0) {
+            myLS3.subdivide(meshGdp, subdivIter);
+        }
+
         GU_DetailHandle handle;
         handle.allocateAndSet(meshGdp);
         return handle;

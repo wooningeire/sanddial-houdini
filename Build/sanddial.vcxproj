@@ -136,6 +136,7 @@ if %errorlevel% neq 0 goto :VCEnd</Command>
     <ClCompile Include="C:\Users\V\_\penn\cis6600\sanddial\src\ErosionSolver.cpp" />
     <ClCompile Include="C:\Users\V\_\penn\cis6600\sanddial\src\DepositionSolver.cpp" />
     <ClCompile Include="C:\Users\V\_\penn\cis6600\sanddial\src\PoissonMesher.cpp" />
+    <ClCompile Include="C:\Users\V\_\penn\cis6600\sanddial\src\LS3Subdiv.cpp" />
     <ClInclude Include="C:\Users\V\_\penn\cis6600\sanddial\src\SOP_Sanddial.h" />
     <ClInclude Include="C:\Users\V\_\penn\cis6600\sanddial\src\SIM_AreniteSolver.h" />
     <ClInclude Include="C:\Users\V\_\penn\cis6600\sanddial\src\AreniteGeometry.h" />
@@ -146,6 +147,7 @@ if %errorlevel% neq 0 goto :VCEnd</Command>
     <ClInclude Include="C:\Users\V\_\penn\cis6600\sanddial\src\ErosionSolver.h" />
     <ClInclude Include="C:\Users\V\_\penn\cis6600\sanddial\src\DepositionSolver.h" />
     <ClInclude Include="C:\Users\V\_\penn\cis6600\sanddial\src\PoissonMesher.h" />
+    <ClInclude Include="C:\Users\V\_\penn\cis6600\sanddial\src\LS3Subdiv.h" />
   </ItemGroup>
   <ItemGroup />
   <ItemGroup>

@@ -39,6 +39,7 @@ set(SOURCE_FILES
     src/ErosionSolver.cpp
     src/DepositionSolver.cpp
     src/PoissonMesher.cpp
+    src/LS3Subdiv.cpp
 )
 
 set(HEADER_FILES
@@ -52,6 +53,7 @@ set(HEADER_FILES
     src/ErosionSolver.h
     src/DepositionSolver.h
     src/PoissonMesher.h
+    src/LS3Subdiv.h
 )
 
 add_library(${PROJECT_NAME} SHARED ${SOURCE_FILES} ${HEADER_FILES})
