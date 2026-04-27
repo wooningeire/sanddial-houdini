@@ -8,10 +8,13 @@
 ///   - **Wind deflation**: direct dislodging of particles by wind friction,
 ///     modeled via the Mohr-Coulomb / Rayleigh distribution formula (Eq. 12).
 ///   - **Wind abrasion**: erosion from solid particles carried by the wind,
-///     simulated via divergence-free SPH (DFSPH).
-///
-/// The solver maintains its own set of wind particles for the abrasion
-/// simulation.
+struct WindParticle {
+    UT_Vector3 pos;
+    UT_Vector3 vel;
+    fpreal density = 0.0;
+    fpreal pressure = 0.0;
+};
+
 class WindSolver {
 public:
     WindSolver() = default;
@@ -28,24 +31,40 @@ public:
     fpreal turbulence = 0.2;
 
     // ── Deflation parameters (Eq. 12) ───────────────────────────────────────
-    /// Deflation constant k_d — accounts for particle size to eroded surface
-    /// ratio and characteristic detachment time.
-    /// Default increased internally from realistic 1e-7 to 20.0 to demonstrate erosion rapidly over ~240 frames.
+    /// Deflation constant k_d.
     fpreal deflationCoeff = 5.0;
 
-    /// Internal cohesion coefficient μ_c (Pa) — Mohr-Coulomb model.
+    /// Internal cohesion coefficient μ_c (Pa).
     fpreal cohesion = 1e6;
 
-    /// Dry friction coefficient μ_f — Mohr-Coulomb model.
+    /// Dry friction coefficient μ_f.
     fpreal frictionCoeff = 0.75;
 
-    /// Wind strength scaling α for the Rayleigh distribution of normal
-    /// drag force.  Larger values → stronger wind → more deflation.
+    /// Wind strength scaling α.
     fpreal windAlpha = 2e6;
+
+    // ── Abrasion parameters (Eq. 8) ────────────────────────────────────────
+    /// Abrasion constant k_a.
+    fpreal abrasionCoeff = 0.1;
+
+    /// SPH smoothing length (h).
+    fpreal smoothingLength = 0.4;
+
+    /// Wind particle mass.
+    fpreal particleMass = 0.01;
+
+    /// Rest density of wind (e.g., 1.225 kg/m³ for air).
+    fpreal restDensity = 1.225;
+
+    /// Wind viscosity.
+    fpreal viscosity = 0.1;
 
     /// Compute per-particle wind erosion and accumulate into
     /// `AreniteParticle::erosionValue`.
     void solve(AreniteGeometry& geo, fpreal dt);
+
+    /// Return the current set of wind particles (for visualization).
+    const UT_Array<WindParticle>& getWindParticles() const { return myWindParticles; }
 
 private:
     /// Compute wind deflation for every surface particle (Eq. 12).
@@ -54,4 +73,18 @@ private:
     /// Run a DFSPH step for the wind particles and accumulate abrasion on
     /// sandstone surface particles hit.
     void computeAbrasion(AreniteGeometry& geo, fpreal dt);
+
+    // ── SPH Helpers ────────────────────────────────────────────────────────
+    void emitWindParticles(const AreniteGeometry& geo, fpreal dt);
+    void updateWindParticles(const AreniteGeometry& geo, fpreal dt);
+    
+    /// Cubic spline kernel W(r, h).
+    fpreal kernelW(fpreal r) const;
+    /// Gradient of cubic spline kernel ∇W(r, h).
+    UT_Vector3 kernelGradW(const UT_Vector3& r_vec) const;
+
+    UT_Array<WindParticle> myWindParticles;
+
+    // Wind domain expansion factor (hardcoded per user request).
+    static constexpr fpreal WIND_DOMAIN_EXPANSION = 2.0;
 };

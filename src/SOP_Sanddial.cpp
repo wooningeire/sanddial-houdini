@@ -64,6 +64,15 @@ static PRM_Default prm_precipDefault(1.0);
 static PRM_Name    prm_critShearName("critical_shear_stress", "Critical Shear Stress");
 static PRM_Default prm_critShearDefault(0.05);
 
+static PRM_Name    prm_abrasionCoeffName("abrasion_coeff", "Abrasion Coefficient");
+static PRM_Default prm_abrasionCoeffDefault(0.1);
+
+static PRM_Name    prm_smoothLengthName("smoothing_length", "Smoothing Length");
+static PRM_Default prm_smoothLengthDefault(0.4);
+
+static PRM_Name    prm_showWindName("show_wind", "Show Wind Particles");
+static PRM_Default prm_showWindDefault(1);
+
 // ── Simulation ─────────────────────────────────────────────────────────────
 static PRM_Name    prm_timestepName("timestep", "Timestep");
 static PRM_Default prm_timestepDefault(1.0);
@@ -152,11 +161,10 @@ static PRM_ChoiceList prm_brushModeMenu(PRM_CHOICELIST_SINGLE,
 static PRM_Name    prm_folderName("folder", "");
 static PRM_Default prm_folderDefaults[] = {
     PRM_Default(6, "Material"),
-    PRM_Default(5, "Environment"),
+    PRM_Default(8, "Environment"),
     PRM_Default(7, "Simulation"),
     PRM_Default(3, "Meshing"),
-    PRM_Default(6, "Brush"),    // brush_active, brush_pos, brush_radius,
-                                // brush_strength, brush_falloff, brush_mode
+    PRM_Default(6, "Brush"),
 };
 
 PRM_Template SOP_Sanddial::myTemplateList[] = {
@@ -182,6 +190,9 @@ PRM_Template SOP_Sanddial::myTemplateList[] = {
                  0, &prm_turbulenceRange),
     PRM_Template(PRM_FLT, 1, &prm_precipName,       &prm_precipDefault),
     PRM_Template(PRM_FLT, 1, &prm_critShearName,    &prm_critShearDefault),
+    PRM_Template(PRM_FLT, 1, &prm_abrasionCoeffName, &prm_abrasionCoeffDefault),
+    PRM_Template(PRM_FLT, 1, &prm_smoothLengthName,  &prm_smoothLengthDefault),
+    PRM_Template(PRM_TOGGLE, 1, &prm_showWindName,   &prm_showWindDefault),
 
     // ── Simulation (7 params) ──────────────────────────────────────────
     PRM_Template(PRM_FLT, 1, &prm_timestepName,     &prm_timestepDefault),
@@ -290,6 +301,8 @@ void SOP_Sanddial::loadParameters(fpreal t) {
     myWindSolver.turbulence    = evalFloat("turbulence", 0, t);
     myWaterSolver.precipitation      = evalFloat("precipitation", 0, t);
     myWaterSolver.criticalShearStress = evalFloat("critical_shear_stress", 0, t);
+    myWindSolver.abrasionCoeff       = evalFloat("abrasion_coeff", 0, t);
+    myWindSolver.smoothingLength    = evalFloat("smoothing_length", 0, t);
 
     // Simulation
     myGeo.voxelSize = evalFloat("voxel_size", 0, t);
@@ -513,6 +526,39 @@ OP_ERROR SOP_Sanddial::cookMySop(OP_Context& context) {
                     cdH.set(ptoff, color);
                 }
             }
+        }
+    }
+
+    return error();
+}
+
+OP_ERROR SOP_Sanddial::cookMyGuide1(OP_Context& context) {
+    if (!myGuide1) return error();
+
+    OP_AutoLockInputs inputs(this);
+    if (inputs.lock(context) >= UT_ERROR_ABORT)
+        return error();
+
+    fpreal t = context.getTime();
+    int showWind = evalInt("show_wind", 0, t);
+    if (!showWind) {
+        myGuide1->clearAndDestroy();
+        return error();
+    }
+
+    myGuide1->clearAndDestroy();
+    const auto& windParticles = myWindSolver.getWindParticles();
+
+    if (windParticles.isEmpty()) return error();
+
+    GA_RWHandleV3 cdH(myGuide1->addFloatTuple(GA_ATTRIB_POINT, "Cd", 3));
+
+    for (const auto& wp : windParticles) {
+        GA_Offset ptoff = myGuide1->appendPoint();
+        myGuide1->setPos3(ptoff, wp.pos);
+        if (cdH.isValid()) {
+            // Light blue for wind particles
+            cdH.set(ptoff, UT_Vector3(0.5, 0.7, 1.0));
         }
     }
 
