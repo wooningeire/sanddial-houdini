@@ -80,6 +80,11 @@ static PRM_Default prm_timestepDefault(1.0);
 static PRM_Name    prm_voxelSizeName("voxel_size", "Voxel Size");
 static PRM_Default prm_voxelSizeDefault(0.2);
 
+static PRM_Name    prm_normalRadiusName("normal_radius", "Normal Radius");
+static PRM_Default prm_normalRadiusDefault(2.0);
+static PRM_Range   prm_normalRadiusRange(PRM_RANGE_RESTRICTED, 0.5,
+                                         PRM_RANGE_UI, 10.0);
+
 static PRM_Name    prm_domainSizeName("domain_size", "Domain Size");
 static PRM_Default prm_domainSizeDefaults[] = {
     PRM_Default(10.0), PRM_Default(10.0), PRM_Default(10.0)
@@ -162,7 +167,7 @@ static PRM_Name    prm_folderName("folder", "");
 static PRM_Default prm_folderDefaults[] = {
     PRM_Default(6, "Material"),
     PRM_Default(8, "Environment"),
-    PRM_Default(7, "Simulation"),
+    PRM_Default(8, "Simulation"),
     PRM_Default(3, "Meshing"),
     PRM_Default(6, "Brush"),
 };
@@ -194,9 +199,11 @@ PRM_Template SOP_Sanddial::myTemplateList[] = {
     PRM_Template(PRM_FLT, 1, &prm_smoothLengthName,  &prm_smoothLengthDefault),
     PRM_Template(PRM_TOGGLE, 1, &prm_showWindName,   &prm_showWindDefault),
 
-    // ── Simulation (7 params) ──────────────────────────────────────────
+    // ── Simulation (8 params) ──────────────────────────────────────────
     PRM_Template(PRM_FLT, 1, &prm_timestepName,     &prm_timestepDefault),
     PRM_Template(PRM_FLT, 1, &prm_voxelSizeName,    &prm_voxelSizeDefault),
+    PRM_Template(PRM_FLT, 1, &prm_normalRadiusName,  &prm_normalRadiusDefault,
+                 0, &prm_normalRadiusRange),
     PRM_Template(PRM_FLT_J, 3, &prm_domainSizeName, prm_domainSizeDefaults),
     PRM_Template(PRM_ORD, 1, &prm_simStateName, 0,  &prm_simStateMenu),
     PRM_Template(PRM_INT, 1, &prm_lockFrameName,    &prm_lockFrameDefault,
@@ -309,6 +316,7 @@ void SOP_Sanddial::loadParameters(fpreal t) {
 
     // Simulation
     myGeo.voxelSize = evalFloat("voxel_size", 0, t);
+    myNormalsSolver.smoothingRadiusMult = evalFloat("normal_radius", 0, t);
 }
 
 // ── Bake / Reset Bake ───────────────────────────────────────────────────────

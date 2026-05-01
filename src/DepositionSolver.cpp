@@ -4,15 +4,10 @@
 #include <algorithm>
 
 void DepositionSolver::solve(AreniteGeometry& geo, fpreal dt, int frame) {
-    // Calculate a random grid offset for this frame to avoid staircase artifacts
-    // and vertical pillars. This "blurs" the grid over time.
-    std::mt19937 offsetRng(frame * 12345);
-    std::uniform_real_distribution<fpreal> offsetDist(0.0, geo.grid.dx);
-    UT_Vector3 gridOffset(offsetDist(offsetRng), offsetDist(offsetRng), offsetDist(offsetRng));
-
-    identifyStableCells(geo, gridOffset);
+    UT_Vector3 noOffset(0, 0, 0);
+    identifyStableCells(geo, noOffset);
     buildRoutingGraph(geo);
-    depositParticles(geo, frame, gridOffset);
+    depositParticles(geo, frame, noOffset);
 }
 
 void DepositionSolver::identifyStableCells(const AreniteGeometry& geo, const UT_Vector3& offset) {
@@ -136,7 +131,13 @@ void DepositionSolver::buildRoutingGraph(const AreniteGeometry& geo) {
 
 void DepositionSolver::depositParticles(AreniteGeometry& geo, int frame, const UT_Vector3& offset) {
     std::mt19937 rng(frame * 67891);
-    std::uniform_real_distribution<fpreal> dist(0.0, geo.grid.dx);
+    // Wider jitter: particles can bleed half a cell beyond their destination
+    // cell in each direction, eliminating visible cell-edge clustering.
+    std::uniform_real_distribution<fpreal> xzDist(-0.5 * geo.grid.dx,
+                                                    1.5 * geo.grid.dx);
+    // Vertical perturbation so deposited layers aren't flat shelves.
+    std::uniform_real_distribution<fpreal> yDist(-0.5 * geo.grid.dx,
+                                                   0.5 * geo.grid.dx);
 
     for (auto& p : geo.particles) {
         if (!p.isEroded) continue;
@@ -160,12 +161,13 @@ void DepositionSolver::depositParticles(AreniteGeometry& geo, int frame, const U
                     int dy = rem / geo.grid.res[0];
                     int dx = rem % geo.grid.res[0];
 
-                    fpreal rx = dist(rng);
-                    fpreal rz = dist(rng);
+                    fpreal rx = xzDist(rng);
+                    fpreal rz = xzDist(rng);
+                    fpreal ry = yDist(rng);
                     
                     p.position.x() = geo.grid.origin.x() + dx * geo.grid.dx + rx;
                     p.position.z() = geo.grid.origin.z() + dz * geo.grid.dx + rz;
-                    p.position.y() = d_cell.proxyElevation;
+                    p.position.y() = d_cell.proxyElevation + ry;
                     
                     // Increment proxy elevation to maintain density and create a pile.
                     d_cell.proxyElevation += geo.grid.dx * 0.005f;
