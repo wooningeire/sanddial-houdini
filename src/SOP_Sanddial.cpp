@@ -162,6 +162,36 @@ static PRM_Name prm_brushModeChoices[] = {
 static PRM_ChoiceList prm_brushModeMenu(PRM_CHOICELIST_SINGLE,
                                         prm_brushModeChoices);
 
+static PRM_Name    prm_brushSurfaceOnlyName("brush_surface_only", "Surface Only");
+static PRM_Default prm_brushSurfaceOnlyDefault(0);
+
+static PRM_Name    prm_brushDepthEnabledName("brush_depth_enabled", "Depth Limit");
+static PRM_Default prm_brushDepthEnabledDefault(0);
+
+static PRM_Name    prm_brushDepthName("brush_depth", "Max Depth");
+static PRM_Default prm_brushDepthDefault(0.2);
+static PRM_Range   prm_brushDepthRange(PRM_RANGE_RESTRICTED, 0.0,
+                                      PRM_RANGE_UI, 2.0);
+
+static PRM_Name    prm_brushDepthFalloffName("brush_depth_falloff", "Depth Falloff");
+static PRM_Default prm_brushDepthFalloffDefault(1.0);
+static PRM_Range   prm_brushDepthFalloffRange(PRM_RANGE_RESTRICTED, 0.01,
+                                             PRM_RANGE_UI, 5.0);
+
+static PRM_Name    prm_brushViewDirName("brush_view_dir", "View Direction");
+static PRM_Default prm_brushViewDirDefaults[] = {
+    PRM_Default(0.0), PRM_Default(0.0), PRM_Default(-1.0)
+};
+
+static PRM_Name prm_brushDepthModeName("brush_depth_mode", "Depth Alignment");
+static PRM_Name prm_brushDepthModeChoices[] = {
+    PRM_Name("normal", "Surface Normal"),
+    PRM_Name("view",   "View Aligned"),
+    PRM_Name(0)
+};
+static PRM_ChoiceList prm_brushDepthModeMenu(PRM_CHOICELIST_SINGLE,
+                                            prm_brushDepthModeChoices);
+
 // ── Folder Switcher ────────────────────────────────────────────────────────
 static PRM_Name    prm_folderName("folder", "");
 static PRM_Default prm_folderDefaults[] = {
@@ -169,7 +199,7 @@ static PRM_Default prm_folderDefaults[] = {
     PRM_Default(8, "Environment"),
     PRM_Default(8, "Simulation"),
     PRM_Default(3, "Meshing"),
-    PRM_Default(6, "Brush"),
+    PRM_Default(12, "Brush"),
 };
 
 PRM_Template SOP_Sanddial::myTemplateList[] = {
@@ -226,6 +256,14 @@ PRM_Template SOP_Sanddial::myTemplateList[] = {
     PRM_Template(PRM_FLT, 1, &prm_brushFalloffName,  &prm_brushFalloffDefault,
                  0, &prm_brushFalloffRange),
     PRM_Template(PRM_ORD, 1, &prm_brushModeName,     0, &prm_brushModeMenu),
+    PRM_Template(PRM_TOGGLE, 1, &prm_brushSurfaceOnlyName, &prm_brushSurfaceOnlyDefault),
+    PRM_Template(PRM_TOGGLE, 1, &prm_brushDepthEnabledName, &prm_brushDepthEnabledDefault),
+    PRM_Template(PRM_FLT, 1, &prm_brushDepthName,    &prm_brushDepthDefault,
+                 0, &prm_brushDepthRange),
+    PRM_Template(PRM_FLT, 1, &prm_brushDepthFalloffName, &prm_brushDepthFalloffDefault,
+                 0, &prm_brushDepthFalloffRange),
+    PRM_Template(PRM_ORD, 1, &prm_brushDepthModeName, 0, &prm_brushDepthModeMenu),
+    PRM_Template(PRM_FLT_J, 3, &prm_brushViewDirName, prm_brushViewDirDefaults),
 
     PRM_Template() // sentinel
 };
@@ -438,15 +476,56 @@ void SOP_Sanddial::applyBrushStroke(fpreal t, int frame) {
     fpreal falloff  = SYSmax(evalFloat("brush_falloff",  0, t), fpreal(0.01));
     int    bmode    = evalInt  ("brush_mode",     0, t);
 
-    // Apply stroke directly to myGeo (already contains current frame state)
+    bool   surfaceOnly  = evalInt("brush_surface_only", 0, t) != 0;
+    bool   depthEnabled = evalInt("brush_depth_enabled", 0, t) != 0;
+    fpreal maxDepth     = evalFloat("brush_depth", 0, t);
+    fpreal depthFalloff = evalFloat("brush_depth_falloff", 0, t);
+    int    depthMode    = evalInt("brush_depth_mode", 0, t); // 0=Normal, 1=View
+
+    UT_Vector3 refNormal(0, 1, 0);
+    if (depthEnabled || !surfaceOnly) {
+        if (depthMode == 0) { // Surface Normal alignment
+            fpreal minD2 = 1e18;
+            for (const auto& p : myGeo.particles) {
+                if (!p.isSurface || p.isEroded) continue;
+                fpreal d2 = (p.position - brushCenter).length2();
+                if (d2 < minD2) {
+                    minD2 = d2;
+                    refNormal = p.normal;
+                }
+            }
+        } else { // View alignment
+            refNormal = -UT_Vector3(
+                evalFloat("brush_view_dir", 0, t),
+                evalFloat("brush_view_dir", 1, t),
+                evalFloat("brush_view_dir", 2, t));
+            refNormal.normalize();
+        }
+    }
+
+    // Apply stroke directly to myGeo
     fpreal r2 = radius * radius;
     for (auto& p : myGeo.particles) {
+        if (p.isEroded) continue;
+        if (surfaceOnly && !p.isSurface) continue;
+
         UT_Vector3 diff = p.position - brushCenter;
         fpreal d2 = diff.dot(diff);
         if (d2 >= r2) continue;
 
         fpreal dist  = SYSsqrt(d2);
         fpreal alpha = fpreal(1.0) - SYSpow(dist / radius, falloff);
+
+        // Depth-based filtering and attenuation
+        if (depthEnabled) {
+            // Depth d = projection of (brushCenter - p.pos) onto outward normal
+            fpreal d = (brushCenter - p.position).dot(refNormal);
+            if (d < -0.001 || d > maxDepth) continue; // Skip if too far "above" or too deep
+
+            fpreal depthAlpha = fpreal(1.0) - SYSpow(SYSclamp(d / maxDepth, 0.0, 1.0), depthFalloff);
+            alpha *= depthAlpha;
+        }
+
         fpreal delta = alpha * strength;
 
         if      (bmode == 0) // Add
