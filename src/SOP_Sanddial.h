@@ -60,6 +60,7 @@ private:
     LS3Subdiv        myLS3;
 
     std::map<int, GU_DetailHandle> myFrameCache;
+    std::map<int, UT_Array<WindParticle>> myWindCache;
     std::vector<GU_DetailHandle> myBakeHistory;
     std::vector<int> myBakeFrameHistory;
     int myStartFrame = 1;

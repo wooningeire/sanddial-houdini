@@ -65,6 +65,7 @@ public:
 
     /// Return the current set of wind particles (for visualization).
     const UT_Array<WindParticle>& getWindParticles() const { return myWindParticles; }
+    void setWindParticles(const UT_Array<WindParticle>& particles) { myWindParticles = particles; }
 
     /// Reset the solver state (e.g. for simulation rewinds).
     void reset() { myWindParticles.clear(); }

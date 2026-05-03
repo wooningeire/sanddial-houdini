@@ -455,6 +455,8 @@ int SOP_Sanddial::performBake(fpreal t) {
     myStartFrame = 1;
     myFrameCache.clear();
     myFrameCache[myStartFrame] = bakedGeo;
+    myWindCache.clear();
+    myWindCache[myStartFrame] = myWindSolver.getWindParticles();
 
     // Re-initialize internal simulation state from the baked geometry
     myGeo.initFromHoudiniGeo(bakedGeo.gdp());
@@ -481,6 +483,7 @@ int SOP_Sanddial::performResetBake() {
 
     // Invalidate the cache so we re-simulate from the restored start
     myFrameCache.clear();
+    myWindCache.clear();
     forceRecook();
     return 1;
 }
@@ -494,6 +497,10 @@ GU_DetailHandle SOP_Sanddial::getFrameResult(int frame, const GU_Detail* inputGe
             myGeo.initFromHoudiniGeo(cachedGdp);
             // Re-compute normals for the cached state to ensure mesh alignment
             myNormalsSolver.solve(myGeo);
+            auto windIt = myWindCache.find(frame);
+            if (windIt != myWindCache.end()) {
+                myWindSolver.setWindParticles(windIt->second);
+            }
         }
         return it->second;
     }
@@ -506,6 +513,10 @@ GU_DetailHandle SOP_Sanddial::getFrameResult(int frame, const GU_Detail* inputGe
         auto startIt = myFrameCache.find(myStartFrame);
         if (startIt != myFrameCache.end() && startIt->second.gdp()) {
             myGeo.initFromHoudiniGeo(startIt->second.gdp());
+            auto windIt = myWindCache.find(myStartFrame);
+            if (windIt != myWindCache.end()) {
+                myWindSolver.setWindParticles(windIt->second);
+            }
             return startIt->second;
         }
 
@@ -515,6 +526,7 @@ GU_DetailHandle SOP_Sanddial::getFrameResult(int frame, const GU_Detail* inputGe
         gdh.allocateAndSet(new GU_Detail());
         myGeo.writeToHoudiniGeo(gdh.gdpNC());
         myFrameCache[myStartFrame] = gdh;
+        myWindCache[myStartFrame] = myWindSolver.getWindParticles();
         return gdh;
     }
 
@@ -530,6 +542,7 @@ GU_DetailHandle SOP_Sanddial::getFrameResult(int frame, const GU_Detail* inputGe
     myGeo.writeToHoudiniGeo(gdh.gdpNC());
 
     myFrameCache[frame] = gdh;
+    myWindCache[frame] = myWindSolver.getWindParticles();
     return gdh;
 }
 
@@ -612,10 +625,12 @@ void SOP_Sanddial::applyBrushStroke(fpreal t, int frame) {
 
     // Invalidate all FUTURE cached frames so they recook from this new state
     for (auto jt = myFrameCache.begin(); jt != myFrameCache.end(); ) {
-        if (jt->first > frame)
+        if (jt->first > frame) {
+            myWindCache.erase(jt->first);
             jt = myFrameCache.erase(jt);
-        else
+        } else {
             ++jt;
+        }
     }
 }
 
@@ -646,6 +661,7 @@ OP_ERROR SOP_Sanddial::cookMySop(OP_Context& context) {
     GA_DataId currentDataId = srcGeo->getP()->getDataId();
     if (currentDataId != myInputDataId) {
         myFrameCache.clear();
+        myWindCache.clear();
         myBakeHistory.clear();
         myBakeFrameHistory.clear();
         myStartFrame = 1;
