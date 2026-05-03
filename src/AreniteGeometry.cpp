@@ -69,6 +69,7 @@ void AreniteGeometry::initFromHoudiniGeo(const GU_Detail* geo) {
     GA_ROHandleF erodH(geo->findPointAttribute("erodibility"));
     GA_ROHandleV3 velH(geo->findPointAttribute("v"));
     GA_ROHandleF viabH(geo->findPointAttribute("viability"));
+    GA_ROHandleI sedH(geo->findPointAttribute("isSediment"));
     GA_ROHandleF defGradH(geo->findPointAttribute("deformationGrad"));
     GA_ROHandleF apicCH(geo->findPointAttribute("apicC"));
 
@@ -82,6 +83,7 @@ void AreniteGeometry::initFromHoudiniGeo(const GU_Detail* geo) {
         if (erodH.isValid()) p.erodibility = erodH.get(ptoff);
         if (velH.isValid())  p.velocity    = velH.get(ptoff);
         if (viabH.isValid()) p.viability   = viabH.get(ptoff);
+        if (sedH.isValid())  p.isSediment  = (sedH.get(ptoff) != 0);
 
         if (defGradH.isValid() && defGradH.getTupleSize() == 9) {
             for (int i = 0; i < 3; ++i)
@@ -159,6 +161,7 @@ void AreniteGeometry::writeToHoudiniGeo(GU_Detail* geo) const {
     GA_RWHandleV3 velH(geo->addFloatTuple(GA_ATTRIB_POINT, "v", 3));
     GA_RWHandleF  erodH(geo->addFloatTuple(GA_ATTRIB_POINT, "erodibility", 1));
     GA_RWHandleF  viabH(geo->addFloatTuple(GA_ATTRIB_POINT, "viability", 1));
+    GA_RWHandleI  sedH(geo->addIntTuple(GA_ATTRIB_POINT, "isSediment", 1));
     GA_RWHandleF  stressH(geo->addFloatTuple(GA_ATTRIB_POINT, "stress", 1));
     GA_RWHandleF  defGradH(geo->addFloatTuple(GA_ATTRIB_POINT, "deformationGrad", 9));
     GA_RWHandleF  apicCH(geo->addFloatTuple(GA_ATTRIB_POINT, "apicC", 9));
@@ -173,6 +176,7 @@ void AreniteGeometry::writeToHoudiniGeo(GU_Detail* geo) const {
         if (velH.isValid())  velH.set(pt, p.velocity);
         if (erodH.isValid()) erodH.set(pt, p.erodibility);
         if (viabH.isValid()) viabH.set(pt, p.viability);
+        if (sedH.isValid())  sedH.set(pt, p.isSediment ? 1 : 0);
 
         if (stressH.isValid()) {
             fpreal sumSq = 0;

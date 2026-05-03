@@ -623,12 +623,18 @@ OP_ERROR SOP_Sanddial::cookMySop(OP_Context& context) {
 
     if (visualizeMode > 0) {
         GA_RWHandleV3 cdH(gdp->addFloatTuple(GA_ATTRIB_POINT, "Cd", 3));
+        GA_ROHandleI sedH(gdp->findPointAttribute("isSediment"));
+
         if (cdH.isValid()) {
             if (visualizeMode == 1) { // Erodibility
                 GA_ROHandleF erodH(gdp->findPointAttribute("erodibility"));
                 if (erodH.isValid()) {
                     GA_Offset ptoff;
                     GA_FOR_ALL_PTOFF(gdp, ptoff) {
+                        if (sedH.isValid() && sedH.get(ptoff)) {
+                            cdH.set(ptoff, UT_Vector3(0.8, 0.7, 0.4)); // Sandy color
+                            continue;
+                        }
                         fpreal e = SYSclamp(erodH.get(ptoff), 0.0, 1.0);
                         UT_Vector3 color(e, 0.2 * (1.0 - e), 1.0 - e);
                         cdH.set(ptoff, color);
@@ -640,6 +646,10 @@ OP_ERROR SOP_Sanddial::cookMySop(OP_Context& context) {
                 if (viabH.isValid()) {
                     GA_Offset ptoff;
                     GA_FOR_ALL_PTOFF(gdp, ptoff) {
+                        if (sedH.isValid() && sedH.get(ptoff)) {
+                            cdH.set(ptoff, UT_Vector3(0.8, 0.7, 0.4)); // Sandy color
+                            continue;
+                        }
                         fpreal v = SYSclamp(viabH.get(ptoff), 0.0, 1.0);
                         // Red (low viability) to Green (high viability)
                         UT_Vector3 color(1.0 - v, v, 0.2);
@@ -650,7 +660,6 @@ OP_ERROR SOP_Sanddial::cookMySop(OP_Context& context) {
             else if (visualizeMode == 3) { // Stress
                 GA_ROHandleF stressH(gdp->findPointAttribute("stress"));
                 if (stressH.isValid()) {
-                    // Find max stress for normalization
                     fpreal maxStress = 0;
                     {
                         GA_Offset ptoff;
@@ -664,6 +673,10 @@ OP_ERROR SOP_Sanddial::cookMySop(OP_Context& context) {
                     {
                         GA_Offset ptoff;
                         GA_FOR_ALL_PTOFF(gdp, ptoff) {
+                            if (sedH.isValid() && sedH.get(ptoff)) {
+                                cdH.set(ptoff, UT_Vector3(0.8, 0.7, 0.4)); // Sandy color
+                                continue;
+                            }
                             fpreal s = stressH.get(ptoff) / maxStress;
                             s = SYSclamp(s, 0.0, 1.0);
                             // Heat map: Blue -> Cyan -> Green -> Yellow -> Red

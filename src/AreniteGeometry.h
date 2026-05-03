@@ -37,6 +37,9 @@ struct AreniteParticle {
     /// Whether this particle has been eroded (viability <= 0).
     bool        isEroded = false;
 
+    /// Whether this particle is deposited sediment (was once eroded).
+    bool        isSediment = false;
+
     AreniteParticle() {
         stressTensor.identity();
         deformationGrad.identity();

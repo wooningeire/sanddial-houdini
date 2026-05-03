@@ -150,7 +150,8 @@ void DepositionSolver::depositParticles(AreniteGeometry& geo, int frame, const U
                 if (destIdx >= 0 && destIdx < m_cellData.size()) {
                     if (destIdx == idx) {
                         p.isEroded = false;
-                        p.viability = 1.0f;
+                        p.isSediment = true;
+                        p.viability = 0.05f; // Easy to re-erode
                         continue;
                     }
 
@@ -158,14 +159,14 @@ void DepositionSolver::depositParticles(AreniteGeometry& geo, int frame, const U
                     
                     int dz = destIdx / (geo.grid.res[0] * geo.grid.res[1]);
                     int rem = destIdx % (geo.grid.res[0] * geo.grid.res[1]);
-                    int dy = rem / geo.grid.res[0];
-                    int dx = rem % geo.grid.res[0];
+                    int iy = rem / geo.grid.res[0];
+                    int ix = rem % geo.grid.res[0];
 
                     fpreal rx = xzDist(rng);
                     fpreal rz = xzDist(rng);
                     fpreal ry = yDist(rng);
                     
-                    p.position.x() = geo.grid.origin.x() + dx * geo.grid.dx + rx;
+                    p.position.x() = geo.grid.origin.x() + ix * geo.grid.dx + rx;
                     p.position.z() = geo.grid.origin.z() + dz * geo.grid.dx + rz;
                     p.position.y() = d_cell.proxyElevation + ry;
                     
@@ -173,7 +174,8 @@ void DepositionSolver::depositParticles(AreniteGeometry& geo, int frame, const U
                     d_cell.proxyElevation += geo.grid.dx * 0.005f;
 
                     p.isEroded = false;
-                    p.viability = 1.0f;
+                    p.isSediment = true;
+                    p.viability = 0.05f; // Easy to re-erode
                 }
             }
         }
