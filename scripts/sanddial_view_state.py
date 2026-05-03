@@ -38,7 +38,8 @@ class State(object):
                     "normals": 4,
                     "deflation": 5,
                     "abrasion": 6,
-                    "water": 7
+                    "water": 7,
+                    "total": 8
                 }
                 mode = mode_map.get(mode_str, 0)
                 if self._node:
@@ -66,6 +67,7 @@ def createViewerStateTemplate():
     menu.addActionItem("visualize_deflation", "Wind Deflation")
     menu.addActionItem("visualize_abrasion", "Wind Abrasion")
     menu.addActionItem("visualize_water", "Water")
+    menu.addActionItem("visualize_total", "Total Erosion")
     
     template.bindMenu(menu)
     return template

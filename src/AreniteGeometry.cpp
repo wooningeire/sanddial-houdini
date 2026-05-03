@@ -170,6 +170,7 @@ void AreniteGeometry::writeToHoudiniGeo(GU_Detail* geo) const {
     GA_RWHandleF  deflH(geo->addFloatTuple(GA_ATTRIB_POINT, "wind_deflation", 1));
     GA_RWHandleF  abraH(geo->addFloatTuple(GA_ATTRIB_POINT, "wind_abrasion", 1));
     GA_RWHandleF  watrH(geo->addFloatTuple(GA_ATTRIB_POINT, "water_erosion", 1));
+    GA_RWHandleF  totalH(geo->addFloatTuple(GA_ATTRIB_POINT, "total_erosion", 1));
     GA_RWHandleF  defGradH(geo->addFloatTuple(GA_ATTRIB_POINT, "deformationGrad", 9));
     GA_RWHandleF  apicCH(geo->addFloatTuple(GA_ATTRIB_POINT, "apicC", 9));
 
@@ -188,6 +189,7 @@ void AreniteGeometry::writeToHoudiniGeo(GU_Detail* geo) const {
         if (deflH.isValid()) deflH.set(pt, p.deflationErosion);
         if (abraH.isValid()) abraH.set(pt, p.abrasionErosion);
         if (watrH.isValid()) watrH.set(pt, p.waterErosion);
+        if (totalH.isValid()) totalH.set(pt, p.erosionValue);
 
         if (stressH.isValid()) {
             fpreal sumSq = 0;

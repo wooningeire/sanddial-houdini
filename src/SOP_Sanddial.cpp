@@ -33,6 +33,7 @@ static PRM_Name prm_visualizeModeChoices[] = {
     PRM_Name("deflation",   "Wind Deflation"),
     PRM_Name("abrasion",    "Wind Abrasion"),
     PRM_Name("water",       "Water"),
+    PRM_Name("total_erosion", "Total Erosion"),
     PRM_Name(0)
 };
 static PRM_ChoiceList prm_visualizeModeMenu(PRM_CHOICELIST_SINGLE,
@@ -733,6 +734,16 @@ OP_ERROR SOP_Sanddial::cookMySop(OP_Context& context) {
                     GA_FOR_ALL_PTOFF(gdp, ptoff) {
                         fpreal v = SYSclamp(valH.get(ptoff) * 100.0, 0.0, 1.0);
                         cdH.set(ptoff, UT_Vector3(0, 0, v));
+                    }
+                }
+            }
+            else if (visualizeMode == 8) { // Total Erosion
+                GA_ROHandleF valH(gdp->findPointAttribute("total_erosion"));
+                if (valH.isValid()) {
+                    GA_Offset ptoff;
+                    GA_FOR_ALL_PTOFF(gdp, ptoff) {
+                        fpreal v = SYSclamp(valH.get(ptoff) * 100.0, 0.0, 1.0);
+                        cdH.set(ptoff, UT_Vector3(v, v, v)); // Grayscale for total
                     }
                 }
             }
