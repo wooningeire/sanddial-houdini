@@ -134,6 +134,9 @@ void AreniteGeometry::initGrid() {
 void AreniteGeometry::resetStepData() {
     for (auto& p : particles) {
         p.erosionValue = 0.0;
+        p.deflationErosion = 0.0;
+        p.abrasionErosion = 0.0;
+        p.waterErosion = 0.0;
         p.isSurface = false;
     }
     grid.clear();
@@ -163,6 +166,10 @@ void AreniteGeometry::writeToHoudiniGeo(GU_Detail* geo) const {
     GA_RWHandleF  viabH(geo->addFloatTuple(GA_ATTRIB_POINT, "viability", 1));
     GA_RWHandleI  sedH(geo->addIntTuple(GA_ATTRIB_POINT, "isSediment", 1));
     GA_RWHandleF  stressH(geo->addFloatTuple(GA_ATTRIB_POINT, "stress", 1));
+    GA_RWHandleV3 normH(geo->addFloatTuple(GA_ATTRIB_POINT, "N", 3));
+    GA_RWHandleF  deflH(geo->addFloatTuple(GA_ATTRIB_POINT, "wind_deflation", 1));
+    GA_RWHandleF  abraH(geo->addFloatTuple(GA_ATTRIB_POINT, "wind_abrasion", 1));
+    GA_RWHandleF  watrH(geo->addFloatTuple(GA_ATTRIB_POINT, "water_erosion", 1));
     GA_RWHandleF  defGradH(geo->addFloatTuple(GA_ATTRIB_POINT, "deformationGrad", 9));
     GA_RWHandleF  apicCH(geo->addFloatTuple(GA_ATTRIB_POINT, "apicC", 9));
 
@@ -177,6 +184,10 @@ void AreniteGeometry::writeToHoudiniGeo(GU_Detail* geo) const {
         if (erodH.isValid()) erodH.set(pt, p.erodibility);
         if (viabH.isValid()) viabH.set(pt, p.viability);
         if (sedH.isValid())  sedH.set(pt, p.isSediment ? 1 : 0);
+        if (normH.isValid()) normH.set(pt, p.normal);
+        if (deflH.isValid()) deflH.set(pt, p.deflationErosion);
+        if (abraH.isValid()) abraH.set(pt, p.abrasionErosion);
+        if (watrH.isValid()) watrH.set(pt, p.waterErosion);
 
         if (stressH.isValid()) {
             fpreal sumSq = 0;

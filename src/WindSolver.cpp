@@ -28,8 +28,8 @@ void WindSolver::computeDeflation(AreniteGeometry& geo) {
 
         fpreal Fcn = cohesion + frictionCoeff * trSigma;
         fpreal Wd = deflationCoeff * SYSexp(-(Fcn * Fcn) / twoAlphaSq);
-
         p.erosionValue += Wd;
+        p.deflationErosion += Wd;
     }
 }
 
@@ -87,6 +87,7 @@ void WindSolver::computeAbrasion(AreniteGeometry& geo, fpreal dt) {
                         if (dot > 0) {
                             fpreal Wa = abrasionCoeff * vMag * dot * weight * dt;
                             p.erosionValue += Wa;
+                            p.abrasionErosion += Wa;
                         }
                     }
                 }

@@ -31,6 +31,10 @@ struct AreniteParticle {
     /// Combined wind + water erosion accumulated this step.
     fpreal      erosionValue = 0.0;
 
+    fpreal      deflationErosion = 0.0;
+    fpreal      abrasionErosion = 0.0;
+    fpreal      waterErosion = 0.0;
+
     /// Whether this particle is on the surface (has an empty neighbor cell).
     bool        isSurface = false;
 

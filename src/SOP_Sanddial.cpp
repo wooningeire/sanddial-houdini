@@ -29,6 +29,10 @@ static PRM_Name prm_visualizeModeChoices[] = {
     PRM_Name("erodibility", "Erodibility"),
     PRM_Name("viability",   "Viability"),
     PRM_Name("stress",      "Stress"),
+    PRM_Name("normals",     "Normals"),
+    PRM_Name("deflation",   "Wind Deflation"),
+    PRM_Name("abrasion",    "Wind Abrasion"),
+    PRM_Name("water",       "Water"),
     PRM_Name(0)
 };
 static PRM_ChoiceList prm_visualizeModeMenu(PRM_CHOICELIST_SINGLE,
@@ -687,6 +691,48 @@ OP_ERROR SOP_Sanddial::cookMySop(OP_Context& context) {
                             else color = UT_Vector3(1, 1 - (s - 0.75) * 4, 0);
                             cdH.set(ptoff, color);
                         }
+                    }
+                }
+            }
+            else if (visualizeMode == 4) { // Normals
+                GA_ROHandleV3 normH(gdp->findPointAttribute("N"));
+                if (normH.isValid()) {
+                    GA_Offset ptoff;
+                    GA_FOR_ALL_PTOFF(gdp, ptoff) {
+                        UT_Vector3 n = normH.get(ptoff);
+                        // Map [-1, 1] to [0, 1]
+                        UT_Vector3 color = (n + UT_Vector3(1, 1, 1)) * 0.5;
+                        cdH.set(ptoff, color);
+                    }
+                }
+            }
+            else if (visualizeMode == 5) { // Wind Deflation
+                GA_ROHandleF valH(gdp->findPointAttribute("wind_deflation"));
+                if (valH.isValid()) {
+                    GA_Offset ptoff;
+                    GA_FOR_ALL_PTOFF(gdp, ptoff) {
+                        fpreal v = SYSclamp(valH.get(ptoff) * 100.0, 0.0, 1.0); // Boost for visibility
+                        cdH.set(ptoff, UT_Vector3(v, v * 0.5, 0));
+                    }
+                }
+            }
+            else if (visualizeMode == 6) { // Wind Abrasion
+                GA_ROHandleF valH(gdp->findPointAttribute("wind_abrasion"));
+                if (valH.isValid()) {
+                    GA_Offset ptoff;
+                    GA_FOR_ALL_PTOFF(gdp, ptoff) {
+                        fpreal v = SYSclamp(valH.get(ptoff) * 100.0, 0.0, 1.0);
+                        cdH.set(ptoff, UT_Vector3(0, v, v));
+                    }
+                }
+            }
+            else if (visualizeMode == 7) { // Water
+                GA_ROHandleF valH(gdp->findPointAttribute("water_erosion"));
+                if (valH.isValid()) {
+                    GA_Offset ptoff;
+                    GA_FOR_ALL_PTOFF(gdp, ptoff) {
+                        fpreal v = SYSclamp(valH.get(ptoff) * 100.0, 0.0, 1.0);
+                        cdH.set(ptoff, UT_Vector3(0, 0, v));
                     }
                 }
             }

@@ -34,7 +34,11 @@ class State(object):
                     "nothing": 0,
                     "erodibility": 1,
                     "viability": 2,
-                    "stress": 3
+                    "stress": 3,
+                    "normals": 4,
+                    "deflation": 5,
+                    "abrasion": 6,
+                    "water": 7
                 }
                 mode = mode_map.get(mode_str, 0)
                 if self._node:
@@ -57,6 +61,11 @@ def createViewerStateTemplate():
     menu.addActionItem("visualize_erodibility", "Erodibility")
     menu.addActionItem("visualize_viability", "Viability")
     menu.addActionItem("visualize_stress", "Stress")
+    menu.addActionItem("visualize_normals", "Normals")
+    menu.addSeparator()
+    menu.addActionItem("visualize_deflation", "Wind Deflation")
+    menu.addActionItem("visualize_abrasion", "Wind Abrasion")
+    menu.addActionItem("visualize_water", "Water")
     
     template.bindMenu(menu)
     return template
