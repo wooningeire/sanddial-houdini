@@ -26,6 +26,15 @@ public:
     /// Particle mass (assumed uniform).
     fpreal particleMass = 1.0;
 
+    /// Plasticity yield threshold.
+    fpreal plasticityYield = 2500.0;
+
+    /// Material density (kg/m^3).
+    fpreal density = 2000.0;
+
+    /// CFL factor for adaptive substepping.
+    fpreal cflFactor = 0.4;
+
     /// Compute particle stress tensors in-place.
     /// Updates `stressTensor` and `deformationGrad` on each particle.
     void solve(AreniteGeometry& geo, fpreal dt);

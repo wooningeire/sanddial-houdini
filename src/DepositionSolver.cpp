@@ -151,7 +151,7 @@ void DepositionSolver::depositParticles(AreniteGeometry& geo, int frame, const U
                     if (destIdx == idx) {
                         p.isEroded = false;
                         p.isSediment = true;
-                        p.viability = 0.05f; // Easy to re-erode
+                        p.viability = sedimentViability; // Easy to re-erode
                         continue;
                     }
 
@@ -175,7 +175,7 @@ void DepositionSolver::depositParticles(AreniteGeometry& geo, int frame, const U
 
                     p.isEroded = false;
                     p.isSediment = true;
-                    p.viability = 0.05f; // Easy to re-erode
+                    p.viability = sedimentViability; // Easy to re-erode
                 }
             }
         }

@@ -80,15 +80,10 @@ void MpmSolver::solve(AreniteGeometry& geo, fpreal dt) {
     particleVolume = dx * dx * dx;
 
     // Use a realistic sandstone density (~2000 kg/m³).
-    fpreal density = 2000.0;
     particleMass = density * particleVolume;
 
-    // CFL condition based on elastic wave speed:
-    //   c = sqrt((lambda + 2*mu) / density)
-    //   dt_max = cfl_factor * dx / c
     fpreal waveSpeed = SYSsqrt((lambda + 2.0 * mu) / density);
     if (waveSpeed < 1e-10) waveSpeed = 1.0;
-    fpreal cflFactor = 0.4;
     fpreal maxSubDt = cflFactor * dx / waveSpeed;
     int nSubSteps = SYSmax(1, (int)SYSceil(dt / maxSubDt));
     fpreal subDt = dt / (fpreal)nSubSteps;

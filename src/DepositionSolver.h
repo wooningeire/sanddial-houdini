@@ -30,6 +30,9 @@ public:
     /// Maximum slope (in radians) below which a cell is considered stable.
     fpreal stableSlopeThreshold = 0.5;
 
+    /// Initial viability assigned to deposited sediment.
+    fpreal sedimentViability = 0.05;
+
     /// Process all eroded particles: route them to stable cells and deposit.
     void solve(AreniteGeometry& geo, fpreal dt, int frame);
 

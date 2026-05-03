@@ -60,6 +60,12 @@ static PRM_Range   prm_poissonRange(PRM_RANGE_RESTRICTED, 0.0,
 static PRM_Name    prm_plasticityName("plasticity_yield", "Plasticity Yield");
 static PRM_Default prm_plasticityDefault(2500.0);
 
+static PRM_Name    prm_densityName("density", "Density");
+static PRM_Default prm_densityDefault(2000.0);
+
+static PRM_Name    prm_sedimentViabName("sediment_viability", "Sediment Viability");
+static PRM_Default prm_sedimentViabDefault(0.05);
+
 // ── Environment ────────────────────────────────────────────────────────────
 static PRM_Name    prm_windDirName("wind_direction", "Wind Direction");
 static PRM_Default prm_windDirDefaults[] = {
@@ -86,6 +92,18 @@ static PRM_Default prm_abrasionCoeffDefault(0.1);
 static PRM_Name    prm_smoothLengthName("smoothing_length", "Smoothing Length");
 static PRM_Default prm_smoothLengthDefault(0.4);
 
+static PRM_Name    prm_deflationCoeffName("deflation_coeff", "Deflation Coefficient");
+static PRM_Default prm_deflationCoeffDefault(5.0);
+
+static PRM_Name    prm_cohesionName("cohesion", "Cohesion");
+static PRM_Default prm_cohesionDefault(1e6);
+
+static PRM_Name    prm_frictionCoeffName("friction_coeff", "Friction Coefficient");
+static PRM_Default prm_frictionCoeffDefault(0.75);
+
+static PRM_Name    prm_windAlphaName("wind_alpha", "Wind Alpha");
+static PRM_Default prm_windAlphaDefault(2e6);
+
 static PRM_Name    prm_showWindName("show_wind", "Show Wind Particles");
 static PRM_Default prm_showWindDefault(1);
 
@@ -101,9 +119,15 @@ static PRM_Default prm_normalRadiusDefault(2.0);
 static PRM_Range   prm_normalRadiusRange(PRM_RANGE_RESTRICTED, 0.5,
                                          PRM_RANGE_UI, 10.0);
 
+static PRM_Name    prm_cflFactorName("cfl_factor", "CFL Factor");
+static PRM_Default prm_cflFactorDefault(0.4);
+
+static PRM_Name    prm_stableSlopeName("stable_slope", "Stable Slope");
+static PRM_Default prm_stableSlopeDefault(0.5);
+
 static PRM_Name    prm_domainSizeName("domain_size", "Domain Size");
 static PRM_Default prm_domainSizeDefaults[] = {
-    PRM_Default(10.0), PRM_Default(10.0), PRM_Default(10.0)
+    PRM_Default(1.0), PRM_Default(1.0), PRM_Default(1.0)
 };
 
 static PRM_Name prm_simStateName("sim_state", "Simulation State");
@@ -211,9 +235,9 @@ static PRM_ChoiceList prm_brushDepthModeMenu(PRM_CHOICELIST_SINGLE,
 // ── Folder Switcher ────────────────────────────────────────────────────────
 static PRM_Name    prm_folderName("folder", "");
 static PRM_Default prm_folderDefaults[] = {
-    PRM_Default(6, "Material"),
-    PRM_Default(8, "Environment"),
-    PRM_Default(8, "Simulation"),
+    PRM_Default(8, "Material"),
+    PRM_Default(12, "Environment"),
+    PRM_Default(10, "Simulation"),
     PRM_Default(3, "Meshing"),
     PRM_Default(12, "Brush"),
 };
@@ -234,8 +258,10 @@ PRM_Template SOP_Sanddial::myTemplateList[] = {
     PRM_Template(PRM_FLT, 1, &prm_poissonName,      &prm_poissonDefault,
                  0, &prm_poissonRange),
     PRM_Template(PRM_FLT, 1, &prm_plasticityName,   &prm_plasticityDefault),
+    PRM_Template(PRM_FLT, 1, &prm_densityName,      &prm_densityDefault),
+    PRM_Template(PRM_FLT, 1, &prm_sedimentViabName, &prm_sedimentViabDefault),
 
-    // ── Environment (5 params) ─────────────────────────────────────────
+    // ── Environment (12 params) ─────────────────────────────────────────
     PRM_Template(PRM_FLT_J, 3, &prm_windDirName,   prm_windDirDefaults),
     PRM_Template(PRM_FLT, 1, &prm_windSpeedName,    &prm_windSpeedDefault),
     PRM_Template(PRM_FLT, 1, &prm_turbulenceName,   &prm_turbulenceDefault,
@@ -244,14 +270,20 @@ PRM_Template SOP_Sanddial::myTemplateList[] = {
     PRM_Template(PRM_FLT, 1, &prm_critShearName,    &prm_critShearDefault),
     PRM_Template(PRM_FLT, 1, &prm_abrasionCoeffName, &prm_abrasionCoeffDefault),
     PRM_Template(PRM_FLT, 1, &prm_smoothLengthName,  &prm_smoothLengthDefault),
+    PRM_Template(PRM_FLT, 1, &prm_deflationCoeffName, &prm_deflationCoeffDefault),
+    PRM_Template(PRM_FLT, 1, &prm_cohesionName,      &prm_cohesionDefault),
+    PRM_Template(PRM_FLT, 1, &prm_frictionCoeffName, &prm_frictionCoeffDefault),
+    PRM_Template(PRM_FLT, 1, &prm_windAlphaName,     &prm_windAlphaDefault),
     PRM_Template(PRM_TOGGLE, 1, &prm_showWindName,   &prm_showWindDefault),
 
-    // ── Simulation (8 params) ──────────────────────────────────────────
+    // ── Simulation (10 params) ──────────────────────────────────────────
     PRM_Template(PRM_FLT, 1, &prm_timestepName,     &prm_timestepDefault),
     PRM_Template(PRM_FLT, 1, &prm_voxelSizeName,    &prm_voxelSizeDefault),
     PRM_Template(PRM_FLT, 1, &prm_normalRadiusName,  &prm_normalRadiusDefault,
                  0, &prm_normalRadiusRange),
     PRM_Template(PRM_FLT_J, 3, &prm_domainSizeName, prm_domainSizeDefaults),
+    PRM_Template(PRM_FLT, 1, &prm_cflFactorName,     &prm_cflFactorDefault),
+    PRM_Template(PRM_FLT, 1, &prm_stableSlopeName,   &prm_stableSlopeDefault),
     PRM_Template(PRM_ORD, 1, &prm_simStateName, 0,  &prm_simStateMenu),
     PRM_Template(PRM_INT, 1, &prm_lockFrameName,    &prm_lockFrameDefault,
                  0, &prm_lockFrameRange),
@@ -356,22 +388,41 @@ void SOP_Sanddial::loadParameters(fpreal t) {
     myErosionSolver.stressThreshold   = evalFloat("stress_threshold", 0, t);
     myMpmSolver.youngModulus          = evalFloat("young_modulus", 0, t);
     myMpmSolver.poissonRatio          = evalFloat("poisson_ratio", 0, t);
+    myMpmSolver.plasticityYield       = evalFloat("plasticity_yield", 0, t);
+    myMpmSolver.density               = evalFloat("density", 0, t);
+    myDepositionSolver.sedimentViability = evalFloat("sediment_viability", 0, t);
 
     // Environment
     myWindSolver.windDirection = UT_Vector3(
         evalFloat("wind_direction", 0, t),
         evalFloat("wind_direction", 1, t),
         evalFloat("wind_direction", 2, t));
-    myWindSolver.windSpeed     = evalFloat("wind_speed", 0, t);
-    myWindSolver.turbulence    = evalFloat("turbulence", 0, t);
-    myWaterSolver.precipitation      = evalFloat("precipitation", 0, t);
+    myWindSolver.windSpeed            = evalFloat("wind_speed", 0, t);
+    myWindSolver.turbulence           = evalFloat("turbulence", 0, t);
+    myWaterSolver.precipitation       = evalFloat("precipitation", 0, t);
     myWaterSolver.criticalShearStress = evalFloat("critical_shear_stress", 0, t);
-    myWindSolver.abrasionCoeff       = evalFloat("abrasion_coeff", 0, t);
-    myWindSolver.smoothingLength    = evalFloat("smoothing_length", 0, t);
+    myWindSolver.abrasionCoeff        = evalFloat("abrasion_coeff", 0, t);
+    myWindSolver.smoothingLength      = evalFloat("smoothing_length", 0, t);
+    myWindSolver.deflationCoeff       = evalFloat("deflation_coeff", 0, t);
+    myWindSolver.cohesion             = evalFloat("cohesion", 0, t);
+    myWindSolver.frictionCoeff        = evalFloat("friction_coeff", 0, t);
+    myWindSolver.windAlpha            = evalFloat("wind_alpha", 0, t);
 
     // Simulation
+    mySimTimestep = evalFloat("timestep", 0, t);
     myGeo.voxelSize = evalFloat("voxel_size", 0, t);
     myNormalsSolver.smoothingRadiusMult = evalFloat("normal_radius", 0, t);
+    myGeo.domainPadding = UT_Vector3(
+        evalFloat("domain_size", 0, t),
+        evalFloat("domain_size", 1, t),
+        evalFloat("domain_size", 2, t));
+    myMpmSolver.cflFactor = evalFloat("cfl_factor", 0, t);
+    myDepositionSolver.stableSlopeThreshold = evalFloat("stable_slope", 0, t);
+
+    // Meshing
+    myPoissonDepth     = evalInt("poisson_depth", 0, t);
+    myPoissonScale     = evalFloat("poisson_scale", 0, t);
+    mySubdivIterations = evalInt("subdiv_iterations", 0, t);
 }
 
 // ── Bake / Reset Bake ───────────────────────────────────────────────────────
@@ -447,7 +498,7 @@ GU_DetailHandle SOP_Sanddial::getFrameResult(int frame, const GU_Detail* inputGe
         return it->second;
     }
 
-    fpreal dt = 1.0 / fps;
+    fpreal dt = (1.0 / fps) * mySimTimestep;
 
     if (frame <= myStartFrame) {
         // Always use cached initial state if it exists (supports both baked
@@ -818,16 +869,13 @@ GU_DetailHandle SOP_Sanddial::cookMySopOutput(OP_Context& context, int outputidx
         }
 
         GU_Detail* meshGdp = new GU_Detail();
-        int poissonDepth = evalInt("poisson_depth", 0, t);
-        fpreal poissonScale = evalFloat("poisson_scale", 0, t);
-
+        
         // Re-compute normals for meshing
         myNormalsSolver.solve(myGeo);
-        myMesher.reconstruct(myGeo, meshGdp, poissonDepth, (float)poissonScale);
+        myMesher.reconstruct(myGeo, meshGdp, myPoissonDepth, (float)myPoissonScale);
 
-        int subdivIter = evalInt("subdiv_iterations", 0, t);
-        if (subdivIter > 0) {
-            myLS3.subdivide(meshGdp, subdivIter);
+        if (mySubdivIterations > 0) {
+            myLS3.subdivide(meshGdp, mySubdivIterations);
         }
 
         GU_DetailHandle handle;

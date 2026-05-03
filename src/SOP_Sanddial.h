@@ -65,5 +65,11 @@ private:
     int myStartFrame = 1;
     int myLastBrushToggle = 0;
     GA_DataId myInputDataId = GA_INVALID_DATAID;
+
+    // ── Parameter cache ─────────────────────────────────────────────────────
+    fpreal mySimTimestep = 1.0;
+    int    myPoissonDepth = 8;
+    fpreal myPoissonScale = 1.1;
+    int    mySubdivIterations = 2;
 };
 
