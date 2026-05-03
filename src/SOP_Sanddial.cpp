@@ -462,6 +462,8 @@ int SOP_Sanddial::performBake(fpreal t) {
     myGeo.initFromHoudiniGeo(bakedGeo.gdp());
     myGeo.initGrid();
 
+    setInt("lock_frame", 0, t, 1);
+
     // Force a recook so the viewport updates
     forceRecook();
     return 1;
