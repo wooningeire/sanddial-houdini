@@ -85,6 +85,24 @@ class State(object):
     def onInterrupt(self, kwargs):
         self._brush_drawable.show(False)
 
+    def onMenuAction(self, kwargs):
+        """Handle menu item selection."""
+        menu_item = kwargs["menu_item"]
+        if menu_item.startswith("visualize_"):
+            try:
+                mode_str = menu_item.split("_")[1]
+                mode_map = {
+                    "nothing": 0,
+                    "erodibility": 1,
+                    "viability": 2,
+                    "stress": 3
+                }
+                mode = mode_map.get(mode_str, 0)
+                if self._node:
+                    self._node.parm("visualize_mode").set(mode)
+            except Exception as e:
+                print("Sanddial Paint Menu error:", e)
+
     # ── Drawing ──────────────────────────────────────────────────────────
 
     def onDraw(self, kwargs):
@@ -302,6 +320,16 @@ def createViewerStateTemplate():
     )
     template.bindFactory(State)
     template.bindIcon("SOP_paint")
+    
+    # Create the menu
+    menu = hou.ViewerStateMenu("sanddial_paint_menu", "Visualization")
+    menu.addActionItem("visualize_nothing", "Nothing")
+    menu.addSeparator()
+    menu.addActionItem("visualize_erodibility", "Erodibility")
+    menu.addActionItem("visualize_viability", "Viability")
+    menu.addActionItem("visualize_stress", "Stress")
+    template.bindMenu(menu)
+    
     return template
 
 

@@ -23,6 +23,17 @@ static PRM_Name prm_viewportModeChoices[] = {
 static PRM_ChoiceList prm_viewportModeMenu(PRM_CHOICELIST_SINGLE,
                                            prm_viewportModeChoices);
 
+static PRM_Name prm_visualizeModeName("visualize_mode", "Visualization");
+static PRM_Name prm_visualizeModeChoices[] = {
+    PRM_Name("nothing",     "Nothing"),
+    PRM_Name("erodibility", "Erodibility"),
+    PRM_Name("viability",   "Viability"),
+    PRM_Name("stress",      "Stress"),
+    PRM_Name(0)
+};
+static PRM_ChoiceList prm_visualizeModeMenu(PRM_CHOICELIST_SINGLE,
+                                            prm_visualizeModeChoices);
+
 // ── Material ───────────────────────────────────────────────────────────────
 static PRM_Name    prm_weakErodName("weak_erodibility", "Weak Erodibility");
 static PRM_Default prm_weakErodDefault(1.0);
@@ -205,6 +216,7 @@ static PRM_Default prm_folderDefaults[] = {
 PRM_Template SOP_Sanddial::myTemplateList[] = {
     // Viewport mode selector (outside folders)
     PRM_Template(PRM_ORD, 1, &prm_viewportModeName, 0, &prm_viewportModeMenu),
+    PRM_Template(PRM_ORD, 1, &prm_visualizeModeName, 0, &prm_visualizeModeMenu),
 
     // Folder tabs  (5 tabs now)
     PRM_Template(PRM_SWITCHER, 5, &prm_folderName, prm_folderDefaults),
@@ -601,20 +613,74 @@ OP_ERROR SOP_Sanddial::cookMySop(OP_Context& context) {
         gdp->copy(*resultGeo);
 
     // Viewport mode coloring
+    int visualizeMode = evalInt("visualize_mode", 0, t);
+    
+    // If in Paint mode (1), we usually want to see erodibility unless "Nothing" is selected
     int viewportMode = evalInt("viewport_mode", 0, t);
-    if (viewportMode == 1) {
-        GA_ROHandleF erodH(gdp->findPointAttribute("erodibility"));
-        if (erodH.isValid()) {
-            GA_RWHandleV3 cdH(gdp->addFloatTuple(GA_ATTRIB_POINT, "Cd", 3));
-            if (cdH.isValid()) {
-                GA_Offset ptoff;
-                GA_FOR_ALL_PTOFF(gdp, ptoff) {
-                    fpreal e = SYSclamp(erodH.get(ptoff), 0.0, 1.0);
-                    UT_Vector3 color(e, 0.2 * (1.0 - e), 1.0 - e);
-                    cdH.set(ptoff, color);
+    if (viewportMode == 1 && visualizeMode == 0) {
+        visualizeMode = 1; // Default to Erodibility in Paint mode
+    }
+
+    if (visualizeMode > 0) {
+        GA_RWHandleV3 cdH(gdp->addFloatTuple(GA_ATTRIB_POINT, "Cd", 3));
+        if (cdH.isValid()) {
+            if (visualizeMode == 1) { // Erodibility
+                GA_ROHandleF erodH(gdp->findPointAttribute("erodibility"));
+                if (erodH.isValid()) {
+                    GA_Offset ptoff;
+                    GA_FOR_ALL_PTOFF(gdp, ptoff) {
+                        fpreal e = SYSclamp(erodH.get(ptoff), 0.0, 1.0);
+                        UT_Vector3 color(e, 0.2 * (1.0 - e), 1.0 - e);
+                        cdH.set(ptoff, color);
+                    }
+                }
+            }
+            else if (visualizeMode == 2) { // Viability
+                GA_ROHandleF viabH(gdp->findPointAttribute("viability"));
+                if (viabH.isValid()) {
+                    GA_Offset ptoff;
+                    GA_FOR_ALL_PTOFF(gdp, ptoff) {
+                        fpreal v = SYSclamp(viabH.get(ptoff), 0.0, 1.0);
+                        // Red (low viability) to Green (high viability)
+                        UT_Vector3 color(1.0 - v, v, 0.2);
+                        cdH.set(ptoff, color);
+                    }
+                }
+            }
+            else if (visualizeMode == 3) { // Stress
+                GA_ROHandleF stressH(gdp->findPointAttribute("stress"));
+                if (stressH.isValid()) {
+                    // Find max stress for normalization
+                    fpreal maxStress = 0;
+                    {
+                        GA_Offset ptoff;
+                        GA_FOR_ALL_PTOFF(gdp, ptoff) {
+                            fpreal s = stressH.get(ptoff);
+                            if (s > maxStress) maxStress = s;
+                        }
+                    }
+                    if (maxStress < 1e-5) maxStress = 1.0;
+
+                    {
+                        GA_Offset ptoff;
+                        GA_FOR_ALL_PTOFF(gdp, ptoff) {
+                            fpreal s = stressH.get(ptoff) / maxStress;
+                            s = SYSclamp(s, 0.0, 1.0);
+                            // Heat map: Blue -> Cyan -> Green -> Yellow -> Red
+                            UT_Vector3 color;
+                            if (s < 0.25) color = UT_Vector3(0, s * 4, 1);
+                            else if (s < 0.5) color = UT_Vector3(0, 1, 1 - (s - 0.25) * 4);
+                            else if (s < 0.75) color = UT_Vector3((s - 0.5) * 4, 1, 0);
+                            else color = UT_Vector3(1, 1 - (s - 0.75) * 4, 0);
+                            cdH.set(ptoff, color);
+                        }
+                    }
                 }
             }
         }
+    } else {
+        // If Nothing is selected, ensure Cd is removed if it was added by us
+        gdp->destroyAttribute(GA_ATTRIB_POINT, "Cd");
     }
 
     return error();

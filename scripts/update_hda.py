@@ -15,9 +15,12 @@ try:
 except NameError:
     _SCRIPTS_DIR = os.path.dirname(os.path.abspath(r"C:\Users\V\_\penn\cis6600\sanddial\scripts\update_hda.py"))
 _ENV_STATE_PATH = os.path.join(_SCRIPTS_DIR, "sanddial_env_state.py")
+_VIEW_STATE_PATH = os.path.join(_SCRIPTS_DIR, "sanddial_view_state.py")
 
 with open(_ENV_STATE_PATH, "r", encoding="utf-8") as fh:
     _ENV_STATE_SRC = fh.read()
+with open(_VIEW_STATE_PATH, "r", encoding="utf-8") as fh:
+    _VIEW_STATE_SRC = fh.read()
 
 # ── Callback Scripts ─────────────────────────────────────────────────────────
 
@@ -48,11 +51,17 @@ try:
         try:
             viewer.pane().setIsCurrentTab()
             viewer.setPwd(node.parent())
-            viewer.setCurrentState('select')
         except:
             pass
 
-        if mode == 1:
+        if mode == 0:
+            node.setSelected(True, clear_all_selected=True)
+            node.setCurrent(True, True)
+            try:
+                viewer.setCurrentState('sop_sanddial_view', node=node)
+            except:
+                pass
+        elif mode == 1:
             node.setSelected(True, clear_all_selected=True)
             node.setCurrent(True, True)
             try:
@@ -148,7 +157,9 @@ def main():
     if defn:
         env_section_name = "ViewerStateModule_env"
         defn.addSection(env_section_name, _ENV_STATE_SRC)
-        print(f"  Embedded section '{env_section_name}' to HDA")
+        view_section_name = "ViewerStateModule_view"
+        defn.addSection(view_section_name, _VIEW_STATE_SRC)
+        print(f"  Embedded section '{env_section_name}' and '{view_section_name}' to HDA")
 
         # Also embed the paint state back into the main ViewerStateModule!
         try:
@@ -172,7 +183,7 @@ def main():
         sections = defn.sections()
         existing_install = sections[INSTALL_KEY].contents() if INSTALL_KEY in sections else ""
         
-        MARKER = "# [sanddial_env_state registered]"
+        MARKER = "# [sanddial_view_state registered]"
         if MARKER not in existing_install:
             addition = f"""
 {MARKER}
@@ -185,8 +196,15 @@ def _reg_states():
         src_env = node_type.definition().sections()['{env_section_name}'].contents()
         mod_env = types.ModuleType('sanddial_env_state_module')
         exec(compile(src_env, '{env_section_name}', 'exec'), mod_env.__dict__)
-        import sys; sys.modules['sanddial_env_state_module'] = mod_env
+        sys.modules['sanddial_env_state_module'] = mod_env
         hou.ui.registerViewerState(mod_env.createViewerStateTemplate())
+        
+        # Register VIEW state
+        src_view = node_type.definition().sections()['ViewerStateModule_view'].contents()
+        mod_view = types.ModuleType('sanddial_view_state_module')
+        exec(compile(src_view, 'ViewerStateModule_view', 'exec'), mod_view.__dict__)
+        sys.modules['sanddial_view_state_module'] = mod_view
+        hou.ui.registerViewerState(mod_view.createViewerStateTemplate())
         
         # Register Paint state natively if it exists
         if 'ViewerStateModule' in node_type.definition().sections():
@@ -298,9 +316,12 @@ _reg_states()
                             # Ensure viewer is at the SOP level
                             viewer.setPwd(node.parent())
                             break
-                    # Enter our standalone paint state
-                    viewer.setCurrentState('sop_sanddial_erodibility_paint')
-                    print("  Re-entered paint state")
+                    # Enter our standalone paint state or view state
+                    if node.evalParm('viewport_mode') == 1:
+                        viewer.setCurrentState('sop_sanddial_erodibility_paint')
+                    else:
+                        viewer.setCurrentState('sop_sanddial_view')
+                    print("  Re-entered appropriate state")
             except Exception as e2:
                 print("  Could not auto-re-enter state:", e2)
                 print("  Please switch viewport mode to View and back to Erodibility Paint")

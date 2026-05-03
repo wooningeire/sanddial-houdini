@@ -159,6 +159,7 @@ void AreniteGeometry::writeToHoudiniGeo(GU_Detail* geo) const {
     GA_RWHandleV3 velH(geo->addFloatTuple(GA_ATTRIB_POINT, "v", 3));
     GA_RWHandleF  erodH(geo->addFloatTuple(GA_ATTRIB_POINT, "erodibility", 1));
     GA_RWHandleF  viabH(geo->addFloatTuple(GA_ATTRIB_POINT, "viability", 1));
+    GA_RWHandleF  stressH(geo->addFloatTuple(GA_ATTRIB_POINT, "stress", 1));
     GA_RWHandleF  defGradH(geo->addFloatTuple(GA_ATTRIB_POINT, "deformationGrad", 9));
     GA_RWHandleF  apicCH(geo->addFloatTuple(GA_ATTRIB_POINT, "apicC", 9));
 
@@ -172,6 +173,14 @@ void AreniteGeometry::writeToHoudiniGeo(GU_Detail* geo) const {
         if (velH.isValid())  velH.set(pt, p.velocity);
         if (erodH.isValid()) erodH.set(pt, p.erodibility);
         if (viabH.isValid()) viabH.set(pt, p.viability);
+
+        if (stressH.isValid()) {
+            fpreal sumSq = 0;
+            for (int i = 0; i < 3; ++i)
+                for (int j = 0; j < 3; ++j)
+                    sumSq += p.stressTensor(i, j) * p.stressTensor(i, j);
+            stressH.set(pt, SYSsqrt(sumSq));
+        }
 
         if (defGradH.isValid()) {
             for (int i = 0; i < 3; ++i)
