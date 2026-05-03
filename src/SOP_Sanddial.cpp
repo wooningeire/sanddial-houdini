@@ -236,7 +236,7 @@ static PRM_ChoiceList prm_brushDepthModeMenu(PRM_CHOICELIST_SINGLE,
 static PRM_Name    prm_folderName("folder", "");
 static PRM_Default prm_folderDefaults[] = {
     PRM_Default(8, "Material"),
-    PRM_Default(12, "Environment"),
+    PRM_Default(11, "Environment"),
     PRM_Default(10, "Simulation"),
     PRM_Default(3, "Meshing"),
     PRM_Default(12, "Brush"),
@@ -246,6 +246,7 @@ PRM_Template SOP_Sanddial::myTemplateList[] = {
     // Viewport mode selector (outside folders)
     PRM_Template(PRM_ORD, 1, &prm_viewportModeName, 0, &prm_viewportModeMenu),
     PRM_Template(PRM_ORD, 1, &prm_visualizeModeName, 0, &prm_visualizeModeMenu),
+    PRM_Template(PRM_TOGGLE, 1, &prm_showWindName, &prm_showWindDefault),
 
     // Folder tabs  (5 tabs now)
     PRM_Template(PRM_SWITCHER, 5, &prm_folderName, prm_folderDefaults),
@@ -274,7 +275,6 @@ PRM_Template SOP_Sanddial::myTemplateList[] = {
     PRM_Template(PRM_FLT, 1, &prm_cohesionName,      &prm_cohesionDefault),
     PRM_Template(PRM_FLT, 1, &prm_frictionCoeffName, &prm_frictionCoeffDefault),
     PRM_Template(PRM_FLT, 1, &prm_windAlphaName,     &prm_windAlphaDefault),
-    PRM_Template(PRM_TOGGLE, 1, &prm_showWindName,   &prm_showWindDefault),
 
     // ── Simulation (10 params) ──────────────────────────────────────────
     PRM_Template(PRM_FLT, 1, &prm_timestepName,     &prm_timestepDefault),
