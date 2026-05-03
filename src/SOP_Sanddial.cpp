@@ -869,9 +869,15 @@ GU_DetailHandle SOP_Sanddial::cookMySopOutput(OP_Context& context, int outputidx
         return handle;
     }
 
-    if (outputidx == 1) {
+    if (outputidx == 1 || outputidx == 2) {
+        OP_AutoLockInputs inputs(this);
+        if (inputs.lock(context) >= UT_ERROR_ABORT)
+            return GU_DetailHandle();
+
         flags().setTimeDep(true);
         fpreal t = context.getTime();
+        loadParameters(t);
+
         fpreal fps = OPgetDirector()->getChannelManager()->getSamplesPerSec();
         int frame = (int)SYSrint(t * fps) + 1;
 
@@ -887,11 +893,15 @@ GU_DetailHandle SOP_Sanddial::cookMySopOutput(OP_Context& context, int outputidx
             getFrameResult(frame, srcGeo, fps);
         }
 
-        GU_Detail* meshGdp = new GU_Detail();
-        
         // Re-compute normals for meshing
         myNormalsSolver.solve(myGeo);
-        myMesher.reconstruct(myGeo, meshGdp, myPoissonDepth, (float)myPoissonScale);
+
+        MeshFilter filter = (outputidx == 1) ? MeshFilter::SandstoneOnly
+                                              : MeshFilter::SedimentOnly;
+
+        GU_Detail* meshGdp = new GU_Detail();
+        myMesher.reconstruct(myGeo, meshGdp, myPoissonDepth,
+                             (float)myPoissonScale, filter);
 
         if (mySubdivIterations > 0) {
             myLS3.subdivide(meshGdp, mySubdivIterations);

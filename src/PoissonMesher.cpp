@@ -16,9 +16,11 @@ struct ArenitePointStream
     : public Reconstructor::InputOrientedSampleStream<float, 3>
 {
     const AreniteGeometry& geo;
+    MeshFilter filter;
     exint idx;
 
-    ArenitePointStream(const AreniteGeometry& g) : geo(g), idx(0) {}
+    ArenitePointStream(const AreniteGeometry& g, MeshFilter f)
+        : geo(g), filter(f), idx(0) {}
 
     void reset() override { idx = 0; }
 
@@ -28,6 +30,8 @@ struct ArenitePointStream
             ++idx;
             if (part.isEroded) continue;
             if (!part.isSurface) continue;
+            if (filter == MeshFilter::SandstoneOnly && part.isSediment) continue;
+            if (filter == MeshFilter::SedimentOnly && !part.isSediment) continue;
 
             p[0] = (float)part.position.x();
             p[1] = (float)part.position.y();
@@ -81,15 +85,19 @@ struct MeshFaceStream : public Reconstructor::OutputFaceStream<2>
 void PoissonMesher::reconstruct(const AreniteGeometry& geo,
                                 GU_Detail* outputGeo,
                                 int depth,
-                                float scale)
+                                float scale,
+                                MeshFilter filter)
 {
     if (!outputGeo) return;
 
-    // Count eligible particles (surface + alive)
+    // Count eligible particles (surface + alive + filter)
     int eligibleCount = 0;
     for (exint i = 0; i < geo.particles.entries(); ++i) {
         const auto& p = geo.particles(i);
-        if (!p.isEroded && p.isSurface) ++eligibleCount;
+        if (p.isEroded || !p.isSurface) continue;
+        if (filter == MeshFilter::SandstoneOnly && p.isSediment) continue;
+        if (filter == MeshFilter::SedimentOnly && !p.isSediment) continue;
+        ++eligibleCount;
     }
     if (eligibleCount < 4) return; // need at least a few points
 
@@ -106,7 +114,7 @@ void PoissonMesher::reconstruct(const AreniteGeometry& geo,
     solverParams.verbose = false;
 
     // ── Solve ───────────────────────────────────────────────────────────
-    ArenitePointStream pointStream(geo);
+    ArenitePointStream pointStream(geo, filter);
 
     using Implicit = Reconstructor::Implicit<float, 3, FEMSigs>;
     using Solver   = ReconType::Solver<float, 3, FEMSigs>;

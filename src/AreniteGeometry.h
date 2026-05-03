@@ -77,7 +77,7 @@ struct VoxelGrid {
     /// Convert a world-space position to a grid-space index triple.
     /// Returns false if the position is outside the grid.
     bool worldToGrid(const UT_Vector3& pos, int& ix, int& iy, int& iz) const;
-
+    ///
     /// Flat index from (ix, iy, iz).
     exint flatIndex(int ix, int iy, int iz) const {
         return (exint)ix + (exint)res[0] * ((exint)iy + (exint)res[1] * (exint)iz);

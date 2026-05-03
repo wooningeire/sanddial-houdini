@@ -15,7 +15,7 @@ void newSopOperator(OP_OperatorTable* table) {
         0, // Local variables
         0, // Flags
         0, // Variables
-        2  // Number of outputs
+        3  // Number of outputs
     ));
 }
 
