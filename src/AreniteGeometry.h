@@ -108,6 +108,9 @@ public:
     fpreal voxelSize = 0.1;
     UT_Vector3 domainPadding{1, 1, 1};  ///< Extra padding around particle bounds.
 
+    bool   useGroundPlane = true;
+    fpreal groundY = 0.0;
+
     // ── Helpers ─────────────────────────────────────────────────────────────
     /// Initialise particles from an array of positions.
     void initFromPositions(const UT_Array<UT_Vector3>& positions);
@@ -123,6 +126,9 @@ public:
 
     /// Write particle state back to a Houdini GU_Detail.
     void writeToHoudiniGeo(GU_Detail* geo) const;
+
+    /// Write grid state back to a Houdini GU_Detail.
+    void writeGridToHoudiniGeo(GU_Detail* geo, int gridVisMode) const;
 
     /// Return the number of non-eroded ("alive") particles.
     int aliveCount() const;

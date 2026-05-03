@@ -129,25 +129,31 @@ void WindSolver::emitWindParticles(const AreniteGeometry& geo, fpreal dt) {
     // Number of particles to emit this step.
     int emitCount = (int)(1000 * dt * windSpeed); // Heuristic rate
     
-    // Determine the dominant axis for emission.
+    // Probabilistic face selection based on wind direction components.
     fpreal ax = SYSabs(windDir.x());
     fpreal ay = SYSabs(windDir.y());
     fpreal az = SYSabs(windDir.z());
+    fpreal totalFlux = ax + ay + az;
+    
+    if (totalFlux < 1e-6) return;
 
     for (int i = 0; i < emitCount; ++i) {
         WindParticle wp;
         
-        if (ax >= ay && ax >= az) { // X-dominant
+        // Pick a face proportional to the flux along that axis.
+        fpreal r = (fpreal)rand() / RAND_MAX * totalFlux;
+        
+        if (r < ax) { // X-face
             wp.pos.x() = (windDir.x() > 0) ? minBound.x() : maxBound.x();
             wp.pos.y() = minBound.y() + (fpreal)rand() / RAND_MAX * (maxBound.y() - minBound.y());
             wp.pos.z() = minBound.z() + (fpreal)rand() / RAND_MAX * (maxBound.z() - minBound.z());
         }
-        else if (ay >= ax && ay >= az) { // Y-dominant
+        else if (r < ax + ay) { // Y-face
             wp.pos.y() = (windDir.y() > 0) ? minBound.y() : maxBound.y();
             wp.pos.x() = minBound.x() + (fpreal)rand() / RAND_MAX * (maxBound.x() - minBound.x());
             wp.pos.z() = minBound.z() + (fpreal)rand() / RAND_MAX * (maxBound.z() - minBound.z());
         }
-        else { // Z-dominant
+        else { // Z-face
             wp.pos.z() = (windDir.z() > 0) ? minBound.z() : maxBound.z();
             wp.pos.x() = minBound.x() + (fpreal)rand() / RAND_MAX * (maxBound.x() - minBound.x());
             wp.pos.y() = minBound.y() + (fpreal)rand() / RAND_MAX * (maxBound.y() - minBound.y());

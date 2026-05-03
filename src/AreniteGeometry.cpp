@@ -120,6 +120,10 @@ void AreniteGeometry::initGrid() {
     bmin -= domainPadding;
     bmax += domainPadding;
 
+    if (useGroundPlane) {
+        bmin.y() = SYSmax(bmin.y(), groundY);
+    }
+
     // Compute grid resolution from voxel size.
     fpreal dx = voxelSize;
     if (dx < 1e-6) dx = 0.1;
@@ -209,6 +213,66 @@ void AreniteGeometry::writeToHoudiniGeo(GU_Detail* geo) const {
             for (int i = 0; i < 3; ++i)
                 for (int j = 0; j < 3; ++j)
                     apicCH.set(pt, i * 3 + j, p.apicC(i, j));
+        }
+    }
+}
+
+void AreniteGeometry::writeGridToHoudiniGeo(GU_Detail* geo, int gridVisMode) const {
+    if (!geo) return;
+    geo->clearAndDestroy();
+
+    GA_RWHandleV3 cdH(geo->addFloatTuple(GA_ATTRIB_POINT, "Cd", 3));
+    GA_RWHandleF  massH(geo->addFloatTuple(GA_ATTRIB_POINT, "mass", 1));
+    GA_RWHandleV3 velH(geo->addFloatTuple(GA_ATTRIB_POINT, "v", 3));
+    GA_RWHandleV3 forceH(geo->addFloatTuple(GA_ATTRIB_POINT, "force", 3));
+    GA_RWHandleI  occH(geo->addIntTuple(GA_ATTRIB_POINT, "occupied", 1));
+
+    for (int iz = 0; iz < grid.res[2]; ++iz) {
+        for (int iy = 0; iy < grid.res[1]; ++iy) {
+            for (int ix = 0; ix < grid.res[0]; ++ix) {
+                const VoxelCell& cell = grid.cells[grid.flatIndex(ix, iy, iz)];
+                
+                // Only visualize occupied cells or cells with mass/force to avoid clutter.
+                if (!cell.occupied && cell.mass < 1e-6 && cell.force.length2() < 1e-6)
+                    continue;
+
+                UT_Vector3 pos = grid.origin + UT_Vector3(ix + 0.5, iy + 0.5, iz + 0.5) * grid.dx;
+                GA_Offset pt = geo->appendPoint();
+                geo->setPos3(pt, pos);
+
+                if (massH.isValid()) massH.set(pt, cell.mass);
+                if (velH.isValid())  velH.set(pt, cell.velocity);
+                if (forceH.isValid()) forceH.set(pt, cell.force);
+                if (occH.isValid())  occH.set(pt, cell.occupied ? 1 : 0);
+
+                if (cdH.isValid()) {
+                    UT_Vector3 color(0.2, 0.2, 0.2); // Default gray
+                    if (gridVisMode == 0) { // Mass
+                        fpreal m = SYSclamp(cell.mass * 10.0, 0.0, 1.0);
+                        color = UT_Vector3(m, m, m);
+                    } else if (gridVisMode == 1) { // Momentum
+                        fpreal len = cell.momentum.length();
+                        if (len > 1e-5) {
+                            color = (cell.momentum / len + UT_Vector3(1, 1, 1)) * 0.5;
+                            color *= SYSclamp(len * 0.2, 0.2, 1.0);
+                        }
+                    } else if (gridVisMode == 2) { // Velocity (Direction)
+                        fpreal len = cell.velocity.length();
+                        if (len > 1e-5) {
+                            color = (cell.velocity / len + UT_Vector3(1, 1, 1)) * 0.5;
+                        }
+                    } else if (gridVisMode == 3) { // Speed
+                        fpreal s = SYSclamp(cell.velocity.length() * 0.5, 0.0, 1.0);
+                        color = UT_Vector3(s, s * 0.5, 1.0 - s);
+                    } else if (gridVisMode == 4) { // Force
+                        fpreal f = SYSclamp(cell.force.length() * 0.1, 0.0, 1.0);
+                        color = UT_Vector3(f, 0.5 * (1.0 - f), 1.0 - f);
+                    } else if (gridVisMode == 5) { // Occupancy
+                        color = cell.occupied ? UT_Vector3(0.2, 0.8, 0.2) : UT_Vector3(0.5, 0.1, 0.1);
+                    }
+                    cdH.set(pt, color);
+                }
+            }
         }
     }
 }
