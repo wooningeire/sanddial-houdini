@@ -870,6 +870,7 @@ GU_DetailHandle SOP_Sanddial::cookMySopOutput(OP_Context& context, int outputidx
     }
 
     if (outputidx == 1) {
+        flags().setTimeDep(true);
         fpreal t = context.getTime();
         fpreal fps = OPgetDirector()->getChannelManager()->getSamplesPerSec();
         int frame = (int)SYSrint(t * fps) + 1;
