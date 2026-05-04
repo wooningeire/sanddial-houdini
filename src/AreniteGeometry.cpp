@@ -6,12 +6,11 @@
 
 // ── VoxelGrid ──────────────────────────────────────────────────────────────
 
-void VoxelGrid::allocate(int rx, int ry, int rz, fpreal cellSize,
-                         const UT_Vector3& org) {
+void VoxelGrid::allocate(int rx, int ry, int rz, fpreal cellSize, const UT_Vector3 &org) {
     res[0] = rx;
     res[1] = ry;
     res[2] = rz;
-    dx     = cellSize;
+    dx = cellSize;
     origin = org;
 
     exint total = (exint)rx * (exint)ry * (exint)rz;
@@ -20,17 +19,16 @@ void VoxelGrid::allocate(int rx, int ry, int rz, fpreal cellSize,
 }
 
 void VoxelGrid::clear() {
-    for (auto& c : cells) {
-        c.mass     = 0.0;
+    for (auto &c : cells) {
+        c.mass = 0.0;
         c.momentum = UT_Vector3(0, 0, 0);
         c.velocity = UT_Vector3(0, 0, 0);
-        c.force    = UT_Vector3(0, 0, 0);
+        c.force = UT_Vector3(0, 0, 0);
         c.occupied = false;
     }
 }
 
-bool VoxelGrid::worldToGrid(const UT_Vector3& pos,
-                            int& ix, int& iy, int& iz) const {
+bool VoxelGrid::worldToGrid(const UT_Vector3 &pos, int &ix, int &iy, int &iz) const {
     UT_Vector3 local = (pos - origin) / dx;
     ix = (int)SYSfloor(local.x());
     iy = (int)SYSfloor(local.y());
@@ -40,15 +38,15 @@ bool VoxelGrid::worldToGrid(const UT_Vector3& pos,
 
 // ── AreniteGeometry ────────────────────────────────────────────────────────
 
-void AreniteGeometry::initFromPositions(const UT_Array<UT_Vector3>& positions) {
+void AreniteGeometry::initFromPositions(const UT_Array<UT_Vector3> &positions) {
     particles.setSize(positions.size());
-    for (exint i = 0; i < positions.size(); ++i) {
+    for (exint i = 0; i < positions.size(); i++) {
         particles[i] = AreniteParticle();
         particles[i].position = positions[i];
     }
 }
 
-void AreniteGeometry::initFromHoudiniGeo(const GU_Detail* geo) {
+void AreniteGeometry::initFromHoudiniGeo(const GU_Detail *geo) {
     if (!geo) return;
 
     // Load grid configuration from detail attributes if present
@@ -76,28 +74,32 @@ void AreniteGeometry::initFromHoudiniGeo(const GU_Detail* geo) {
     exint idx = 0;
     GA_Offset ptoff;
     GA_FOR_ALL_PTOFF(geo, ptoff) {
-        AreniteParticle& p = particles[idx];
+        AreniteParticle &p = particles[idx];
         p = AreniteParticle();
-        p.position  = geo->getPos3(ptoff);
-        
+        p.position = geo->getPos3(ptoff);
+
         if (erodH.isValid()) p.erodibility = erodH.get(ptoff);
-        if (velH.isValid())  p.velocity    = velH.get(ptoff);
-        if (viabH.isValid()) p.viability   = viabH.get(ptoff);
-        if (sedH.isValid())  p.isSediment  = (sedH.get(ptoff) != 0);
+        if (velH.isValid()) p.velocity = velH.get(ptoff);
+        if (viabH.isValid()) p.viability = viabH.get(ptoff);
+        if (sedH.isValid()) p.isSediment = (sedH.get(ptoff) != 0);
 
         if (defGradH.isValid() && defGradH.getTupleSize() == 9) {
-            for (int i = 0; i < 3; ++i)
-                for (int j = 0; j < 3; ++j)
+            for (int i = 0; i < 3; i++) {
+                for (int j = 0; j < 3; j++) {
                     p.deformationGrad(i, j) = defGradH.get(ptoff, i * 3 + j);
+                }
+            }
         }
 
         if (apicCH.isValid() && apicCH.getTupleSize() == 9) {
-            for (int i = 0; i < 3; ++i)
-                for (int j = 0; j < 3; ++j)
+            for (int i = 0; i < 3; i++) {
+                for (int j = 0; j < 3; j++) {
                     p.apicC(i, j) = apicCH.get(ptoff, i * 3 + j);
+                }
+            }
         }
 
-        ++idx;
+        idx++;
     }
 }
 
@@ -107,7 +109,7 @@ void AreniteGeometry::initGrid() {
     // Compute bounding box of all particles.
     UT_Vector3 bmin = particles[0].position;
     UT_Vector3 bmax = particles[0].position;
-    for (const auto& p : particles) {
+    for (const auto &p : particles) {
         bmin.x() = SYSmin(bmin.x(), p.position.x());
         bmin.y() = SYSmin(bmin.y(), p.position.y());
         bmin.z() = SYSmin(bmin.z(), p.position.z());
@@ -136,7 +138,7 @@ void AreniteGeometry::initGrid() {
 }
 
 void AreniteGeometry::resetStepData() {
-    for (auto& p : particles) {
+    for (auto &p : particles) {
         p.erosionValue = 0.0;
         p.deflationErosion = 0.0;
         p.abrasionErosion = 0.0;
@@ -146,7 +148,7 @@ void AreniteGeometry::resetStepData() {
     grid.clear();
 }
 
-void AreniteGeometry::writeToHoudiniGeo(GU_Detail* geo) const {
+void AreniteGeometry::writeToHoudiniGeo(GU_Detail *geo) const {
     if (!geo) return;
 
     geo->clearAndDestroy();
@@ -166,29 +168,29 @@ void AreniteGeometry::writeToHoudiniGeo(GU_Detail* geo) const {
 
     // Create point attributes.
     GA_RWHandleV3 velH(geo->addFloatTuple(GA_ATTRIB_POINT, "v", 3));
-    GA_RWHandleF  erodH(geo->addFloatTuple(GA_ATTRIB_POINT, "erodibility", 1));
-    GA_RWHandleF  viabH(geo->addFloatTuple(GA_ATTRIB_POINT, "viability", 1));
-    GA_RWHandleI  sedH(geo->addIntTuple(GA_ATTRIB_POINT, "isSediment", 1));
-    GA_RWHandleF  stressH(geo->addFloatTuple(GA_ATTRIB_POINT, "stress", 1));
+    GA_RWHandleF erodH(geo->addFloatTuple(GA_ATTRIB_POINT, "erodibility", 1));
+    GA_RWHandleF viabH(geo->addFloatTuple(GA_ATTRIB_POINT, "viability", 1));
+    GA_RWHandleI sedH(geo->addIntTuple(GA_ATTRIB_POINT, "isSediment", 1));
+    GA_RWHandleF stressH(geo->addFloatTuple(GA_ATTRIB_POINT, "stress", 1));
     GA_RWHandleV3 normH(geo->addFloatTuple(GA_ATTRIB_POINT, "N", 3));
-    GA_RWHandleF  deflH(geo->addFloatTuple(GA_ATTRIB_POINT, "wind_deflation", 1));
-    GA_RWHandleF  abraH(geo->addFloatTuple(GA_ATTRIB_POINT, "wind_abrasion", 1));
-    GA_RWHandleF  watrH(geo->addFloatTuple(GA_ATTRIB_POINT, "water_erosion", 1));
-    GA_RWHandleF  totalH(geo->addFloatTuple(GA_ATTRIB_POINT, "total_erosion", 1));
-    GA_RWHandleF  defGradH(geo->addFloatTuple(GA_ATTRIB_POINT, "deformationGrad", 9));
-    GA_RWHandleF  apicCH(geo->addFloatTuple(GA_ATTRIB_POINT, "apicC", 9));
+    GA_RWHandleF deflH(geo->addFloatTuple(GA_ATTRIB_POINT, "wind_deflation", 1));
+    GA_RWHandleF abraH(geo->addFloatTuple(GA_ATTRIB_POINT, "wind_abrasion", 1));
+    GA_RWHandleF watrH(geo->addFloatTuple(GA_ATTRIB_POINT, "water_erosion", 1));
+    GA_RWHandleF totalH(geo->addFloatTuple(GA_ATTRIB_POINT, "total_erosion", 1));
+    GA_RWHandleF defGradH(geo->addFloatTuple(GA_ATTRIB_POINT, "deformationGrad", 9));
+    GA_RWHandleF apicCH(geo->addFloatTuple(GA_ATTRIB_POINT, "apicC", 9));
 
-    for (const auto& p : particles) {
+    for (const auto &p : particles) {
         if (p.isEroded)
             continue;
 
         GA_Offset pt = geo->appendPoint();
         geo->setPos3(pt, p.position);
 
-        if (velH.isValid())  velH.set(pt, p.velocity);
+        if (velH.isValid()) velH.set(pt, p.velocity);
         if (erodH.isValid()) erodH.set(pt, p.erodibility);
         if (viabH.isValid()) viabH.set(pt, p.viability);
-        if (sedH.isValid())  sedH.set(pt, p.isSediment ? 1 : 0);
+        if (sedH.isValid()) sedH.set(pt, p.isSediment ? 1 : 0);
         if (normH.isValid()) normH.set(pt, p.normal);
         if (deflH.isValid()) deflH.set(pt, p.deflationErosion);
         if (abraH.isValid()) abraH.set(pt, p.abrasionErosion);
@@ -197,41 +199,47 @@ void AreniteGeometry::writeToHoudiniGeo(GU_Detail* geo) const {
 
         if (stressH.isValid()) {
             fpreal sumSq = 0;
-            for (int i = 0; i < 3; ++i)
-                for (int j = 0; j < 3; ++j)
+            for (int i = 0; i < 3; i++) {
+                for (int j = 0; j < 3; j++) {
                     sumSq += p.stressTensor(i, j) * p.stressTensor(i, j);
+                }
+            }
             stressH.set(pt, SYSsqrt(sumSq));
         }
 
         if (defGradH.isValid()) {
-            for (int i = 0; i < 3; ++i)
-                for (int j = 0; j < 3; ++j)
+            for (int i = 0; i < 3; i++) {
+                for (int j = 0; j < 3; j++) {
                     defGradH.set(pt, i * 3 + j, p.deformationGrad(i, j));
+                }
+            }
         }
 
         if (apicCH.isValid()) {
-            for (int i = 0; i < 3; ++i)
-                for (int j = 0; j < 3; ++j)
+            for (int i = 0; i < 3; i++) {
+                for (int j = 0; j < 3; j++) {
                     apicCH.set(pt, i * 3 + j, p.apicC(i, j));
+                }
+            }
         }
     }
 }
 
-void AreniteGeometry::writeGridToHoudiniGeo(GU_Detail* geo, int gridVisMode) const {
+void AreniteGeometry::writeGridToHoudiniGeo(GU_Detail *geo, int gridVisMode) const {
     if (!geo) return;
     geo->clearAndDestroy();
 
     GA_RWHandleV3 cdH(geo->addFloatTuple(GA_ATTRIB_POINT, "Cd", 3));
-    GA_RWHandleF  massH(geo->addFloatTuple(GA_ATTRIB_POINT, "mass", 1));
+    GA_RWHandleF massH(geo->addFloatTuple(GA_ATTRIB_POINT, "mass", 1));
     GA_RWHandleV3 velH(geo->addFloatTuple(GA_ATTRIB_POINT, "v", 3));
     GA_RWHandleV3 forceH(geo->addFloatTuple(GA_ATTRIB_POINT, "force", 3));
-    GA_RWHandleI  occH(geo->addIntTuple(GA_ATTRIB_POINT, "occupied", 1));
+    GA_RWHandleI occH(geo->addIntTuple(GA_ATTRIB_POINT, "occupied", 1));
 
-    for (int iz = 0; iz < grid.res[2]; ++iz) {
-        for (int iy = 0; iy < grid.res[1]; ++iy) {
-            for (int ix = 0; ix < grid.res[0]; ++ix) {
-                const VoxelCell& cell = grid.cells[grid.flatIndex(ix, iy, iz)];
-                
+    for (int iz = 0; iz < grid.res[2]; iz++) {
+        for (int iy = 0; iy < grid.res[1]; iy++) {
+            for (int ix = 0; ix < grid.res[0]; ix++) {
+                const VoxelCell &cell = grid.cells[grid.flatIndex(ix, iy, iz)];
+
                 // Only visualize occupied cells or cells with mass/force to avoid clutter.
                 if (!cell.occupied && cell.mass < 1e-6 && cell.force.length2() < 1e-6)
                     continue;
@@ -241,9 +249,9 @@ void AreniteGeometry::writeGridToHoudiniGeo(GU_Detail* geo, int gridVisMode) con
                 geo->setPos3(pt, pos);
 
                 if (massH.isValid()) massH.set(pt, cell.mass);
-                if (velH.isValid())  velH.set(pt, cell.velocity);
+                if (velH.isValid()) velH.set(pt, cell.velocity);
                 if (forceH.isValid()) forceH.set(pt, cell.force);
-                if (occH.isValid())  occH.set(pt, cell.occupied ? 1 : 0);
+                if (occH.isValid()) occH.set(pt, cell.occupied ? 1 : 0);
 
                 if (cdH.isValid()) {
                     UT_Vector3 color(0.2, 0.2, 0.2); // Default gray
@@ -279,9 +287,9 @@ void AreniteGeometry::writeGridToHoudiniGeo(GU_Detail* geo, int gridVisMode) con
 
 int AreniteGeometry::aliveCount() const {
     int count = 0;
-    for (const auto& p : particles) {
+    for (const auto &p : particles) {
         if (!p.isEroded)
-            ++count;
+            count++;
     }
     return count;
 }

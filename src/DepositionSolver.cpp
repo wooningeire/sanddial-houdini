@@ -3,21 +3,21 @@
 #include <random>
 #include <algorithm>
 
-void DepositionSolver::solve(AreniteGeometry& geo, fpreal dt, int frame) {
+void DepositionSolver::solve(AreniteGeometry &geo, fpreal dt, int frame) {
     UT_Vector3 noOffset(0, 0, 0);
     identifyStableCells(geo, noOffset);
     buildRoutingGraph(geo);
     depositParticles(geo, frame, noOffset);
 }
 
-void DepositionSolver::identifyStableCells(const AreniteGeometry& geo, const UT_Vector3& offset) {
+void DepositionSolver::identifyStableCells(const AreniteGeometry &geo, const UT_Vector3 &offset) {
     m_cellData.clear();
     m_cellData.resize(geo.grid.cells.entries());
 
     // Aggregate normals and Y positions for surface particles
-    for (const auto& p : geo.particles) {
+    for (const auto &p : geo.particles) {
         if (!p.isSurface || p.isEroded) continue;
-        
+
         int cx, cy, cz;
         if (geo.grid.worldToGrid(p.position + offset, cx, cy, cz)) {
             exint idx = geo.grid.flatIndex(cx, cy, cz);
@@ -30,13 +30,13 @@ void DepositionSolver::identifyStableCells(const AreniteGeometry& geo, const UT_
     }
 
     // Compute average slope and determine stability
-    for (size_t i = 0; i < m_cellData.size(); ++i) {
-        auto& cell = m_cellData[i];
+    for (size_t i = 0; i < m_cellData.size(); i++) {
+        auto &cell = m_cellData[i];
         if (cell.surfaceCount > 0) {
             cell.proxyElevation = cell.sumY / cell.surfaceCount;
             UT_Vector3 avgNormal = cell.sumNormal;
             avgNormal.normalize();
-            
+
             // Slope is angle between normal and (0,1,0)
             fpreal ny = static_cast<fpreal>(avgNormal.y());
             cell.averageSlope = std::acos(std::max(static_cast<fpreal>(-1.0), std::min(static_cast<fpreal>(1.0), ny)));
@@ -51,17 +51,17 @@ void DepositionSolver::identifyStableCells(const AreniteGeometry& geo, const UT_
     }
 }
 
-void DepositionSolver::buildRoutingGraph(const AreniteGeometry& geo) {
+void DepositionSolver::buildRoutingGraph(const AreniteGeometry &geo) {
     const int rx = geo.grid.res[0];
     const int ry = geo.grid.res[1];
     const int rz = geo.grid.res[2];
 
     // Find receivers
-    for (int iz = 0; iz < rz; ++iz) {
-        for (int iy = 0; iy < ry; ++iy) {
-            for (int ix = 0; ix < rx; ++ix) {
+    for (int iz = 0; iz < rz; iz++) {
+        for (int iy = 0; iy < ry; iy++) {
+            for (int ix = 0; ix < rx; ix++) {
                 exint c_idx = geo.grid.flatIndex(ix, iy, iz);
-                auto& c_cell = m_cellData[c_idx];
+                auto &c_cell = m_cellData[c_idx];
 
                 if (c_cell.surfaceCount == 0) {
                     // Empty cell: gravity pulls straight down
@@ -77,17 +77,17 @@ void DepositionSolver::buildRoutingGraph(const AreniteGeometry& geo) {
                     fpreal maxSlope = 0.0;
 
                     // Check 26 neighbors
-                    for (int dz = -1; dz <= 1; ++dz) {
-                        for (int dy = -1; dy <= 1; ++dy) {
-                            for (int dx = -1; dx <= 1; ++dx) {
+                    for (int dz = -1; dz <= 1; dz++) {
+                        for (int dy = -1; dy <= 1; dy++) {
+                            for (int dx = -1; dx <= 1; dx++) {
                                 if (dx == 0 && dy == 0 && dz == 0) continue;
                                 int nx = ix + dx;
                                 int ny = iy + dy;
                                 int nz = iz + dz;
                                 if (geo.grid.inBounds(nx, ny, nz)) {
                                     exint n_idx = geo.grid.flatIndex(nx, ny, nz);
-                                    const auto& n_cell = m_cellData[n_idx];
-                                    
+                                    const auto &n_cell = m_cellData[n_idx];
+
                                     if (n_cell.proxyElevation < c_cell.proxyElevation) {
                                         fpreal drop = c_cell.proxyElevation - n_cell.proxyElevation;
                                         fpreal dist = std::sqrt((fpreal)(dx*dx + dy*dy + dz*dz)) * geo.grid.dx;
@@ -113,9 +113,9 @@ void DepositionSolver::buildRoutingGraph(const AreniteGeometry& geo) {
     int numIterations = 0;
     if (N > 0) numIterations = static_cast<int>(std::ceil(std::log2(N)));
 
-    for (int iter = 0; iter < numIterations; ++iter) {
+    for (int iter = 0; iter < numIterations; iter++) {
         std::vector<int> nextP(N, -1);
-        for (int i = 0; i < N; ++i) {
+        for (int i = 0; i < N; i++) {
             int p = m_cellData[i].pIdx;
             if (p >= 0) {
                 nextP[i] = m_cellData[p].pIdx;
@@ -123,23 +123,27 @@ void DepositionSolver::buildRoutingGraph(const AreniteGeometry& geo) {
                 nextP[i] = p;
             }
         }
-        for (int i = 0; i < N; ++i) {
+        for (int i = 0; i < N; i++) {
             m_cellData[i].pIdx = nextP[i];
         }
     }
 }
 
-void DepositionSolver::depositParticles(AreniteGeometry& geo, int frame, const UT_Vector3& offset) {
+void DepositionSolver::depositParticles(AreniteGeometry &geo, int frame, const UT_Vector3 &offset) {
     std::mt19937 rng(frame * 67891);
     // Wider jitter: particles can bleed half a cell beyond their destination
     // cell in each direction, eliminating visible cell-edge clustering.
-    std::uniform_real_distribution<fpreal> xzDist(-0.5 * geo.grid.dx,
-                                                    1.5 * geo.grid.dx);
+    std::uniform_real_distribution<fpreal> xzDist(
+        -0.5 * geo.grid.dx,
+        1.5 * geo.grid.dx
+    );
     // Vertical perturbation so deposited layers aren't flat shelves.
-    std::uniform_real_distribution<fpreal> yDist(-0.5 * geo.grid.dx,
-                                                   0.5 * geo.grid.dx);
+    std::uniform_real_distribution<fpreal> yDist(
+        -0.5 * geo.grid.dx,
+        0.5 * geo.grid.dx
+    );
 
-    for (auto& p : geo.particles) {
+    for (auto &p : geo.particles) {
         if (!p.isEroded) continue;
 
         int cx, cy, cz;
@@ -155,8 +159,8 @@ void DepositionSolver::depositParticles(AreniteGeometry& geo, int frame, const U
                         continue;
                     }
 
-                    auto& d_cell = m_cellData[destIdx];
-                    
+                    auto &d_cell = m_cellData[destIdx];
+
                     int dz = destIdx / (geo.grid.res[0] * geo.grid.res[1]);
                     int rem = destIdx % (geo.grid.res[0] * geo.grid.res[1]);
                     int iy = rem / geo.grid.res[0];
@@ -165,11 +169,11 @@ void DepositionSolver::depositParticles(AreniteGeometry& geo, int frame, const U
                     fpreal rx = xzDist(rng);
                     fpreal rz = xzDist(rng);
                     fpreal ry = yDist(rng);
-                    
+
                     p.position.x() = geo.grid.origin.x() + ix * geo.grid.dx + rx;
                     p.position.z() = geo.grid.origin.z() + dz * geo.grid.dx + rz;
                     p.position.y() = d_cell.proxyElevation + ry;
-                    
+
                     // Increment proxy elevation to maintain density and create a pile.
                     d_cell.proxyElevation += geo.grid.dx * 0.005f;
 
