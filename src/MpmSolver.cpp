@@ -122,15 +122,7 @@ void MpmSolver::transferToGrid(AreniteGeometry& geo, fpreal dt,
         quadraticWeights(fx.y(), wy);
         quadraticWeights(fx.z(), wz);
 
-        // Corotated constitutive model (Stomakhin 2012 / Jiang 2016, Eq. 5):
-        //
-        //   P = 2μ(F − R) + λ(J − 1)J · F^{−⊤}
-        //
-        //   PF^T = 2μ(F − R)F^T + λ(J − 1)J · F^{−⊤}F^T
-        //        = 2μ(F − R)F^T + λ(J − 1)J · I
-        //
-        // The last simplification holds because F^{−⊤}F^T = (F^T)^{−1}F^T = I.
-        // Cauchy stress:  σ = (1/J) · P · F^T
+        // Fixed corotated stress:  stress = 2*mu*(F-R)*F^T + lambda*(J-1)*J*I
         UT_Matrix3 R, S;
         polarDecomp(p.deformationGrad, R, S);
         fpreal J = p.deformationGrad.determinant();
@@ -138,13 +130,14 @@ void MpmSolver::transferToGrid(AreniteGeometry& geo, fpreal dt,
         UT_Matrix3 Ft = p.deformationGrad;
         Ft.transpose();
 
-        // (F − R)
+        // Compute  PF^T = 2*mu*(F-R)*F^T + lambda*(J-1)*J * I
+        // Then stress_term = -vol * PF^T * (4 * inv_dx^2 * dt)
         UT_Matrix3 FminusR = p.deformationGrad;
         for (int i = 0; i < 3; ++i)
             for (int j = 0; j < 3; ++j)
                 FminusR(i, j) -= R(i, j);
 
-        // PFt = 2μ(F − R)F^T
+        // PFt = 2*mu*(F-R)*F^T
         UT_Matrix3 PFt;
         PFt.zero();
         for (int i = 0; i < 3; ++i)
@@ -155,14 +148,14 @@ void MpmSolver::transferToGrid(AreniteGeometry& geo, fpreal dt,
             for (int j = 0; j < 3; ++j)
                 PFt(i, j) *= 2.0 * mu;
 
-        // Add λ(J − 1)J · I  (F^{−⊤}F^T = I, so this is exact, not an
-        // approximation).
+        // Add lambda*(J-1)*J to diagonal
         fpreal ljj = lambda * (J - 1.0) * J;
         PFt(0, 0) += ljj;
         PFt(1, 1) += ljj;
         PFt(2, 2) += ljj;
 
-        // Cauchy stress σ = (1/J) · PF^T
+        // Save the Cauchy stress for the erosion solver:
+        //   sigma = (1/J) * P * F^T   (but we already have P*F^T above)
         if (SYSabs(J) > 1e-10) {
             p.stressTensor = PFt;
             for (int i = 0; i < 3; ++i)

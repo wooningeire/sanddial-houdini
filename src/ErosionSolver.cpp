@@ -3,6 +3,11 @@
 
 void ErosionSolver::solve(AreniteGeometry& geo, fpreal dt) {
     // Paper Eq. 1:  ∂b/∂t = -E(σ_c) * (W + F)
+    //
+    // With wind abrasion W_a = 0 and fluvial erosion F = 0, this reduces to:
+    //   ∂b/∂t = -E(σ_c) * W_d
+    //
+    // p.erosionValue already contains W_d (accumulated by the WindSolver).
     for (auto& p : geo.particles) {
         if (p.isEroded)
             continue;
@@ -12,7 +17,7 @@ void ErosionSolver::solve(AreniteGeometry& geo, fpreal dt) {
 
         if (p.viability <= 0.0) {
             p.viability = 0.0;
-            p.isEroded  = true;
+            p.isEroded = true;
         }
     }
 }

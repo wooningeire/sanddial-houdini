@@ -1,28 +1,24 @@
 #pragma once
 
 #include "AreniteGeometry.h"
-#include <vector>
 
 /// Computes per-particle normals for surface particles.
 ///
-/// Matches the paper (§5.1):
-///   - Surface particles are identified as those in non-empty grid cells that
-///     have at least one empty neighbour cell (grid-occupancy criterion).
-///   - Normals are estimated as the leading eigenvector of the covariance
-///     matrix of the k-nearest neighbours (PCA), with k = 20 and a kD-Tree
-///     for acceleration.  The sign is resolved so the normal points away from
-///     the interior (outward).
+/// Surface particles are identified via a local SPH density estimate:
+/// particles whose density falls below a threshold (indicating they sit
+/// near the boundary of the particle cloud) are marked as surface.
+///
+/// Normals are estimated as the negative gradient of the SPH density
+/// field, which varies smoothly across cell boundaries and eliminates
+/// visible grid-edge artifacts.
 class NormalsSolver {
 public:
     NormalsSolver() = default;
     ~NormalsSolver() = default;
 
-    /// Number of nearest neighbours used for PCA normal estimation.
-    /// Paper §5.1: k = 20.
-    int kNeighbours = 20;
-
-    /// Smoothing radius multiplier (kept for grid-hash bucket sizing).
-    /// Effective search radius = smoothingRadiusMult * dx.
+    /// Smoothing radius for the SPH kernel used in density / normal
+    /// estimation.  Expressed as a multiplier of the grid cell size dx.
+    /// The effective radius is  smoothingRadiusMult * dx.
     fpreal smoothingRadiusMult = 2.0;
 
     /// Identify surface particles and compute their normals in-place.
@@ -34,18 +30,21 @@ private:
     /// positions.  Called at the start of solve().
     void buildSpatialHash(const AreniteGeometry& geo);
 
-    /// Collect the indices of the k nearest non-eroded neighbours of particle
-    /// `idx` within the search radius.
-    void kNearestNeighbours(const AreniteGeometry& geo, exint idx,
-                            fpreal searchRadius,
-                            std::vector<exint>& result) const;
+    /// SPH cubic-spline kernel  W(r, h).
+    fpreal kernelW(fpreal r, fpreal h) const;
 
-    /// Estimate the surface normal for particle `idx` using PCA on its
-    /// k-nearest neighbours.  Returns the eigenvector corresponding to the
-    /// smallest eigenvalue of the covariance matrix (the surface normal
-    /// direction), oriented outward.
-    UT_Vector3 estimateNormalPCA(const AreniteGeometry& geo, exint idx,
-                                 const std::vector<exint>& neighbours) const;
+    /// Gradient of the SPH cubic-spline kernel  ∇W.
+    /// Returns a vector pointing from the neighbor toward the query point.
+    UT_Vector3 kernelGradW(const UT_Vector3& r_vec, fpreal h) const;
+
+    /// Estimate the surface normal for particle `idx` using the SPH
+    /// density-gradient method:  n = -∇ρ / |∇ρ|.
+    UT_Vector3 estimateNormal(const AreniteGeometry& geo, exint idx,
+                              fpreal h) const;
+
+    /// Compute a local SPH density for particle `idx`.
+    fpreal estimateDensity(const AreniteGeometry& geo, exint idx,
+                           fpreal h) const;
 
     std::vector<std::vector<exint>> m_particleBuckets;
 };

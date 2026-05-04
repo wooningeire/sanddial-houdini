@@ -106,19 +106,19 @@ static PRM_ChoiceList prm_visualizeModeMenu(PRM_CHOICELIST_SINGLE,
 
 // ── Material ───────────────────────────────────────────────────────────────
 static PRM_Name    prm_weakErodName("weak_erodibility", "Weak Erodibility");
-static PRM_Default prm_weakErodDefault(1.0e-4);
+static PRM_Default prm_weakErodDefault(1.0);
 
 static PRM_Name    prm_strongErodName("strong_erodibility", "Strong Erodibility");
-static PRM_Default prm_strongErodDefault(1.0e-6);
+static PRM_Default prm_strongErodDefault(0.2);
 
 static PRM_Name    prm_stressThreshName("stress_threshold", "Stress Threshold");
-static PRM_Default prm_stressThreshDefault(1.5e6);
+static PRM_Default prm_stressThreshDefault(1000.0);
 
 static PRM_Name    prm_youngModName("young_modulus", "Young's Modulus");
-static PRM_Default prm_youngModDefault(3.67e10);
+static PRM_Default prm_youngModDefault(1e5);
 
 static PRM_Name    prm_poissonName("poisson_ratio", "Poisson's Ratio");
-static PRM_Default prm_poissonDefault(0.222);
+static PRM_Default prm_poissonDefault(0.3);
 static PRM_Range   prm_poissonRange(PRM_RANGE_RESTRICTED, 0.0,
                                     PRM_RANGE_RESTRICTED, 0.499);
 
@@ -177,7 +177,7 @@ static PRM_Name    prm_timestepName("timestep", "Timestep");
 static PRM_Default prm_timestepDefault(1.0);
 
 static PRM_Name    prm_voxelSizeName("voxel_size", "Voxel Size");
-static PRM_Default prm_voxelSizeDefault(0.05);
+static PRM_Default prm_voxelSizeDefault(0.2);
 
 static PRM_Name    prm_normalRadiusName("normal_radius", "Normal Radius");
 static PRM_Default prm_normalRadiusDefault(2.0);

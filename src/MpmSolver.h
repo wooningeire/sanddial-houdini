@@ -14,15 +14,11 @@ public:
     ~MpmSolver() = default;
 
     // ── Parameters ──────────────────────────────────────────────────────────
-    /// Young's modulus (Pa).
-    /// Paper Table 2: μ = 15 GPa, λ = 12 GPa.
-    /// Back-calculated: E = μ(3λ+2μ)/(λ+μ) ≈ 36.7 GPa,
-    ///                  ν = λ/(2(λ+μ))      ≈ 0.222.
-    fpreal youngModulus = 3.67e10;
+    /// Young's modulus  (stiffness).
+    fpreal youngModulus = 1.0e5;
 
     /// Poisson's ratio.
-    /// Derived from μ = 15 GPa, λ = 12 GPa: ν = λ/(2(λ+μ)) ≈ 0.222.
-    fpreal poissonRatio = 0.222;
+    fpreal poissonRatio = 0.3;
 
     /// Particle volume (assumed uniform).
     fpreal particleVolume = 1.0;

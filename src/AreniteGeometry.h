@@ -105,7 +105,7 @@ public:
     VoxelGrid grid;
 
     // ── Grid parameters (user settings) ─────────────────────────────────────
-    fpreal voxelSize = 0.05;
+    fpreal voxelSize = 0.1;
     UT_Vector3 domainPadding{1, 1, 1};  ///< Extra padding around particle bounds.
 
     bool   useGroundPlane = true;

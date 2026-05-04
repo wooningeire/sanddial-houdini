@@ -1,38 +1,59 @@
 #include "NormalsSolver.h"
 #include <SYS/SYS_Math.h>
-#include <algorithm>
-#include <numeric>
 #include <cmath>
 
-// ── Spatial hash ───────────────────────────────────────────────────────────
-void NormalsSolver::buildSpatialHash(const AreniteGeometry& geo) {
-    m_particleBuckets.clear();
-    m_particleBuckets.resize(geo.grid.cells.entries());
-    for (exint i = 0; i < geo.particles.entries(); ++i) {
-        const auto& p = geo.particles(i);
-        if (p.isEroded) continue;
-        int ix, iy, iz;
-        if (geo.grid.worldToGrid(p.position, ix, iy, iz)) {
-            m_particleBuckets[geo.grid.flatIndex(ix, iy, iz)].push_back(i);
-        }
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
+
+// ── SPH cubic-spline kernel ────────────────────────────────────────────────
+// W(r, h) = σ * { 6(q³ - q²) + 1,   q ≤ 0.5
+//               { 2(1-q)³,            0.5 < q ≤ 1
+//               { 0,                  q > 1
+// where q = r/h,  σ = 8 / (π h³)
+fpreal NormalsSolver::kernelW(fpreal r, fpreal h) const {
+    fpreal q = r / h;
+    if (q >= 1.0) return 0.0;
+
+    fpreal sigma = 8.0 / (M_PI * h * h * h);
+    if (q <= 0.5) {
+        return sigma * (6.0 * (q * q * q - q * q) + 1.0);
+    } else {
+        fpreal t = 1.0 - q;
+        return sigma * 2.0 * t * t * t;
     }
 }
 
-// ── k-nearest neighbours ───────────────────────────────────────────────────
-void NormalsSolver::kNearestNeighbours(const AreniteGeometry& geo,
-                                       exint idx,
-                                       fpreal searchRadius,
-                                       std::vector<exint>& result) const {
-    result.clear();
+// ── Gradient of the cubic-spline kernel ────────────────────────────────────
+// ∇W = dW/dr * (r_vec / |r_vec|)
+UT_Vector3 NormalsSolver::kernelGradW(const UT_Vector3& r_vec, fpreal h) const {
+    fpreal r = r_vec.length();
+    if (r < 1e-10 || r >= h) return UT_Vector3(0, 0, 0);
+
+    fpreal q = r / h;
+    fpreal sigma = 8.0 / (M_PI * h * h * h * h);  // extra /h from dq/dr
+    fpreal dWdq;
+
+    if (q <= 0.5) {
+        dWdq = sigma * 6.0 * (3.0 * q * q - 2.0 * q);
+    } else {
+        fpreal t = 1.0 - q;
+        dWdq = -sigma * 6.0 * t * t;
+    }
+
+    return (r_vec / r) * dWdq;
+}
+
+// ── Density estimate ───────────────────────────────────────────────────────
+fpreal NormalsSolver::estimateDensity(const AreniteGeometry& geo, exint idx,
+                                     fpreal h) const {
     const auto& p0 = geo.particles(idx);
-
     int ix, iy, iz;
-    if (!geo.grid.worldToGrid(p0.position, ix, iy, iz)) return;
+    if (!geo.grid.worldToGrid(p0.position, ix, iy, iz)) return 0.0;
 
-    int searchR = (int)std::ceil(searchRadius / geo.grid.dx);
+    int searchR = (int)std::ceil(h / geo.grid.dx);
+    fpreal density = 0.0;
 
-    // Collect all candidates within the search radius.
-    std::vector<std::pair<fpreal, exint>> candidates;
     for (int dz = -searchR; dz <= searchR; ++dz) {
         for (int dy = -searchR; dy <= searchR; ++dy) {
             for (int dx = -searchR; dx <= searchR; ++dx) {
@@ -41,129 +62,50 @@ void NormalsSolver::kNearestNeighbours(const AreniteGeometry& geo,
                 int nz = iz + dz;
                 if (!geo.grid.inBounds(nx, ny, nz)) continue;
 
-                const auto& bucket =
-                    m_particleBuckets[geo.grid.flatIndex(nx, ny, nz)];
+                const auto& bucket = m_particleBuckets[geo.grid.flatIndex(nx, ny, nz)];
                 for (exint nIdx : bucket) {
-                    if (nIdx == idx) continue;
-                    fpreal d2 = (p0.position - geo.particles(nIdx).position)
-                                    .length2();
-                    if (d2 <= searchRadius * searchRadius)
-                        candidates.emplace_back(d2, nIdx);
+                    fpreal r = (p0.position - geo.particles(nIdx).position).length();
+                    density += kernelW(r, h);
+                }
+            }
+        }
+    }
+    return density;
+}
+
+// ── Normal estimate via density gradient ───────────────────────────────────
+// n = -∇ρ / |∇ρ|,  where ∇ρ(x) = Σ_j ∇W(x - xⱼ, h)
+UT_Vector3 NormalsSolver::estimateNormal(const AreniteGeometry& geo, exint idx,
+                                        fpreal h) const {
+    const auto& p0 = geo.particles(idx);
+    int ix, iy, iz;
+    if (!geo.grid.worldToGrid(p0.position, ix, iy, iz)) return UT_Vector3(0, 1, 0);
+
+    int searchR = (int)std::ceil(h / geo.grid.dx);
+    UT_Vector3 gradRho(0, 0, 0);
+
+    for (int dz = -searchR; dz <= searchR; ++dz) {
+        for (int dy = -searchR; dy <= searchR; ++dy) {
+            for (int dx = -searchR; dx <= searchR; ++dx) {
+                int nx = ix + dx;
+                int ny = iy + dy;
+                int nz = iz + dz;
+                if (!geo.grid.inBounds(nx, ny, nz)) continue;
+
+                const auto& bucket = m_particleBuckets[geo.grid.flatIndex(nx, ny, nz)];
+                for (exint nIdx : bucket) {
+                    UT_Vector3 r_vec = p0.position - geo.particles(nIdx).position;
+                    gradRho += kernelGradW(r_vec, h);
                 }
             }
         }
     }
 
-    // Partial sort to get the k closest.
-    int k = SYSmin((int)candidates.size(), kNeighbours);
-    std::partial_sort(candidates.begin(), candidates.begin() + k,
-                      candidates.end());
-    result.reserve(k);
-    for (int i = 0; i < k; ++i)
-        result.push_back(candidates[i].second);
-}
-
-// ── PCA normal estimation ──────────────────────────────────────────────────
-// Computes the covariance matrix of the neighbour positions (centred on the
-// query particle) and returns the eigenvector for the smallest eigenvalue,
-// which is the surface normal direction.  Uses the power-iteration / Jacobi
-// method for the 3×3 symmetric eigenproblem.
-//
-// Sign convention: the normal is flipped so it points away from the centroid
-// of all neighbours (outward-facing).
-UT_Vector3 NormalsSolver::estimateNormalPCA(
-        const AreniteGeometry& geo,
-        exint idx,
-        const std::vector<exint>& neighbours) const {
-
-    if (neighbours.empty()) return UT_Vector3(0, 1, 0);
-
-    const UT_Vector3& p0 = geo.particles(idx).position;
-
-    // Compute centroid of neighbours.
-    UT_Vector3 centroid(0, 0, 0);
-    for (exint nIdx : neighbours)
-        centroid += geo.particles(nIdx).position;
-    centroid /= (fpreal)neighbours.size();
-
-    // Build 3×3 covariance matrix C = Σ (pi - centroid)(pi - centroid)^T.
-    // Stored as upper triangle: c[0]=xx, c[1]=xy, c[2]=xz,
-    //                           c[3]=yy, c[4]=yz, c[5]=zz.
-    double C[6] = {0, 0, 0, 0, 0, 0};
-    for (exint nIdx : neighbours) {
-        UT_Vector3 d = geo.particles(nIdx).position - centroid;
-        C[0] += d.x() * d.x();
-        C[1] += d.x() * d.y();
-        C[2] += d.x() * d.z();
-        C[3] += d.y() * d.y();
-        C[4] += d.y() * d.z();
-        C[5] += d.z() * d.z();
-    }
-
-    // Jacobi iteration for symmetric 3×3 eigendecomposition.
-    // We want the eigenvector for the smallest eigenvalue.
-    double a[3][3] = {
-        {C[0], C[1], C[2]},
-        {C[1], C[3], C[4]},
-        {C[2], C[4], C[5]}
-    };
-    double v[3][3] = {{1,0,0},{0,1,0},{0,0,1}}; // eigenvectors (columns)
-
-    for (int iter = 0; iter < 50; ++iter) {
-        // Find the largest off-diagonal element.
-        int p = 0, q = 1;
-        double maxVal = std::abs(a[0][1]);
-        if (std::abs(a[0][2]) > maxVal) { maxVal = std::abs(a[0][2]); p = 0; q = 2; }
-        if (std::abs(a[1][2]) > maxVal) { maxVal = std::abs(a[1][2]); p = 1; q = 2; }
-        if (maxVal < 1e-12) break;
-
-        double theta = 0.5 * std::atan2(2.0 * a[p][q], a[q][q] - a[p][p]);
-        double c = std::cos(theta);
-        double s = std::sin(theta);
-
-        // Apply Jacobi rotation.
-        double ap[3], aq[3];
-        for (int i = 0; i < 3; ++i) {
-            ap[i] = c * a[p][i] - s * a[q][i];
-            aq[i] = s * a[p][i] + c * a[q][i];
-        }
-        for (int i = 0; i < 3; ++i) {
-            a[p][i] = a[i][p] = ap[i];
-            a[q][i] = a[i][q] = aq[i];
-        }
-        a[p][p] = c * c * a[p][p] + s * s * a[q][q] - 2 * s * c * a[p][q];
-        a[q][q] = s * s * a[p][p] + c * c * a[q][q] + 2 * s * c * a[p][q];
-        a[p][q] = a[q][p] = 0.0;
-
-        // Accumulate eigenvectors.
-        for (int i = 0; i < 3; ++i) {
-            double vp = c * v[i][p] - s * v[i][q];
-            double vq = s * v[i][p] + c * v[i][q];
-            v[i][p] = vp;
-            v[i][q] = vq;
-        }
-    }
-
-    // Find the index of the smallest eigenvalue.
-    int minIdx = 0;
-    if (a[1][1] < a[minIdx][minIdx]) minIdx = 1;
-    if (a[2][2] < a[minIdx][minIdx]) minIdx = 2;
-
-    UT_Vector3 normal((fpreal)v[0][minIdx],
-                      (fpreal)v[1][minIdx],
-                      (fpreal)v[2][minIdx]);
-
-    fpreal len = normal.length();
+    fpreal len = gradRho.length();
     if (len < 1e-10) return UT_Vector3(0, 1, 0);
-    normal /= len;
 
-    // Orient outward: the normal should point away from the centroid of
-    // neighbours relative to the query particle.
-    UT_Vector3 outDir = p0 - centroid;
-    if (outDir.dot(normal) < 0.0)
-        normal = -normal;
-
-    return normal;
+    // Normal points outward = direction of decreasing density = -∇ρ
+    return -gradRho / len;
 }
 
 // ── Main solve ─────────────────────────────────────────────────────────────
@@ -171,7 +113,12 @@ void NormalsSolver::solve(AreniteGeometry& geo) {
     VoxelGrid& g = geo.grid;
     if (g.cells.size() == 0) return;
 
+    fpreal h = smoothingRadiusMult * g.dx;
+    if (h < 1e-10) h = 2.0 * g.dx;
+
     // ── 1. Mark grid cells as occupied ──────────────────────────────────
+    //    Still needed by WindSolver for collision detection and by
+    //    DepositionSolver for routing.
     for (auto& c : g.cells)
         c.occupied = false;
 
@@ -182,55 +129,55 @@ void NormalsSolver::solve(AreniteGeometry& geo) {
             g.cells[g.flatIndex(ix, iy, iz)].occupied = true;
     }
 
-    // ── 2. Build spatial hash for neighbour queries ──────────────────────
+    // ── 2. Build spatial hash for neighbor queries ──────────────────────
     buildSpatialHash(geo);
 
-    // ── 3. Identify surface particles (paper §5.1) ───────────────────────
-    // A particle is on the surface if its grid cell has at least one empty
-    // (unoccupied) neighbour cell — the grid-occupancy criterion from the
-    // paper.
-    for (exint i = 0; i < geo.particles.entries(); ++i) {
+    // ── 3. Compute density at every non-eroded particle ─────────────────
+    //    Auto-calibrate the surface threshold: the median density in the
+    //    interior is high; particles with density below a fraction of the
+    //    maximum are on the surface.
+    std::vector<fpreal> densities(geo.particles.size(), 0.0);
+    fpreal maxDensity = 0.0;
+
+    for (exint i = 0; i < geo.particles.size(); ++i) {
+        if (geo.particles(i).isEroded) continue;
+        densities[i] = estimateDensity(geo, i, h);
+        if (densities[i] > maxDensity) maxDensity = densities[i];
+    }
+
+    // Surface threshold: particles with density below 75% of max are
+    // considered surface particles.  This captures the density drop-off
+    // at the particle cloud boundary without requiring manual tuning.
+    fpreal surfaceThreshold = maxDensity * 0.75;
+
+    // ── 4. Detect surface particles via density threshold ───────────────
+    for (exint i = 0; i < geo.particles.size(); ++i) {
         auto& p = geo.particles[i];
         if (p.isEroded) {
             p.isSurface = false;
             continue;
         }
-
-        int ix, iy, iz;
-        if (!g.worldToGrid(p.position, ix, iy, iz)) {
-            p.isSurface = false;
-            continue;
-        }
-
-        bool hasEmptyNeighbour = false;
-        for (int dz = -1; dz <= 1 && !hasEmptyNeighbour; ++dz) {
-            for (int dy = -1; dy <= 1 && !hasEmptyNeighbour; ++dy) {
-                for (int dx = -1; dx <= 1 && !hasEmptyNeighbour; ++dx) {
-                    if (dx == 0 && dy == 0 && dz == 0) continue;
-                    int nx = ix + dx, ny = iy + dy, nz = iz + dz;
-                    if (!g.inBounds(nx, ny, nz)) {
-                        // Out-of-bounds counts as empty.
-                        hasEmptyNeighbour = true;
-                    } else if (!g.cells[g.flatIndex(nx, ny, nz)].occupied) {
-                        hasEmptyNeighbour = true;
-                    }
-                }
-            }
-        }
-        p.isSurface = hasEmptyNeighbour;
+        p.isSurface = (densities[i] < surfaceThreshold);
     }
 
-    // ── 4. Estimate normals via PCA on k-nearest neighbours (paper §5.1) ─
-    // Search radius = smoothingRadiusMult * dx, large enough to reliably
-    // collect kNeighbours particles.
-    fpreal searchRadius = smoothingRadiusMult * g.dx;
-
-    for (exint i = 0; i < geo.particles.entries(); ++i) {
+    // ── 5. Estimate normals for surface particles ───────────────────────
+    for (exint i = 0; i < geo.particles.size(); ++i) {
         auto& p = geo.particles[i];
-        if (!p.isSurface || p.isEroded) continue;
+        if (p.isSurface && !p.isEroded) {
+            p.normal = estimateNormal(geo, i, h);
+        }
+    }
+}
 
-        std::vector<exint> nbrs;
-        kNearestNeighbours(geo, i, searchRadius, nbrs);
-        p.normal = estimateNormalPCA(geo, i, nbrs);
+void NormalsSolver::buildSpatialHash(const AreniteGeometry& geo) {
+    m_particleBuckets.clear();
+    m_particleBuckets.resize(geo.grid.cells.entries());
+    for (exint i = 0; i < geo.particles.entries(); ++i) {
+        const auto& p = geo.particles(i);
+        if (p.isEroded) continue;
+        int ix, iy, iz;
+        if (geo.grid.worldToGrid(p.position, ix, iy, iz)) {
+            m_particleBuckets[geo.grid.flatIndex(ix, iy, iz)].push_back(i);
+        }
     }
 }
