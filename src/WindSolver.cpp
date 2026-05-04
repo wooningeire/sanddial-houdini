@@ -48,17 +48,35 @@ void WindSolver::computeDeflation(AreniteGeometry& geo) {
 }
 
 void WindSolver::computeAbrasion(AreniteGeometry& geo, fpreal dt) {
+    if (geo.grid.cells.isEmpty() || geo.grid.dx < 1e-6) return;
+
+    // Wind domain: a box centred on the grid centre, expanded by
+    // WIND_DOMAIN_EXPANSION on each axis.  Used by BOTH emission (spawns
+    // particles on the upstream face of this box) AND the cleanup pass
+    // below (removes anything that has exited it).  These two MUST use
+    // identical bounds -- previously emission used grid_size * 2 while
+    // cleanup used grid_bbox padded by 2*domainPadding, so for any grid
+    // bigger than ~4*domainPadding the emission face was *outside* the
+    // cleanup region and every spawned particle was deleted on the same
+    // step, producing the "no abrasion particles spawn" symptom.
+    UT_Vector3 size(geo.grid.res[0] * geo.grid.dx,
+                    geo.grid.res[1] * geo.grid.dx,
+                    geo.grid.res[2] * geo.grid.dx);
+    UT_Vector3 center        = geo.grid.origin + size * 0.5;
+    UT_Vector3 expandedSize  = size * WIND_DOMAIN_EXPANSION;
+    UT_Vector3 windMin       = center - expandedSize * 0.5;
+    UT_Vector3 windMax       = center + expandedSize * 0.5;
+
     // 1. Emit new wind particles at the upstream boundary.
-    emitWindParticles(geo, dt);
+    emitWindParticles(geo, dt, windMin, windMax);
 
     // 2. Update wind particle dynamics (SPH step).
     updateWindParticles(geo, dt);
 
     // 3. Accumulate abrasion on sandstone surface particles (Eq. 8).
     // Eq. 8: W_a = k_a * ||v|| * (-n . v)+
-    
+
     // Optimization: Build a temporary map from voxel cells to sandstone particles.
-    if (geo.grid.cells.isEmpty() || geo.grid.dx < 1e-6) return;
 
     std::vector<std::vector<exint>> cellToParticles(geo.grid.cells.size());
     for (exint i = 0; i < geo.particles.size(); ++i) {
@@ -109,47 +127,46 @@ void WindSolver::computeAbrasion(AreniteGeometry& geo, fpreal dt) {
         }
     }
 
-    // 4. Cleanup: Remove particles outside the expanded domain.
-    if (geo.grid.dx < 1e-6) return;
-    UT_Vector3 minBound = geo.grid.origin - geo.domainPadding * WIND_DOMAIN_EXPANSION;
-    UT_Vector3 maxBound = geo.grid.origin + UT_Vector3(geo.grid.res[0] * geo.grid.dx, 
-                                                       geo.grid.res[1] * geo.grid.dx, 
-                                                       geo.grid.res[2] * geo.grid.dx) 
-                          + geo.domainPadding * WIND_DOMAIN_EXPANSION;
-
+    // 4. Cleanup: Remove particles that have left the wind domain
+    //    (windMin/windMax computed above; same box used for emission).
     for (exint i = (exint)myWindParticles.size() - 1; i >= 0; --i) {
         const auto& pos = myWindParticles[i].pos;
-        if (pos.x() < minBound.x() || pos.x() > maxBound.x() ||
-            pos.y() < minBound.y() || pos.y() > maxBound.y() ||
-            pos.z() < minBound.z() || pos.z() > maxBound.z()) {
+        if (pos.x() < windMin.x() || pos.x() > windMax.x() ||
+            pos.y() < windMin.y() || pos.y() > windMax.y() ||
+            pos.z() < windMin.z() || pos.z() > windMax.z()) {
             myWindParticles.removeIndex(i);
         }
     }
 }
 
-void WindSolver::emitWindParticles(const AreniteGeometry& geo, fpreal dt) {
-    // Determine the emission plane based on wind direction.
-    // For simplicity, we'll emit from the min-X or max-X face depending on windDir.x.
+void WindSolver::emitWindParticles(const AreniteGeometry& geo, fpreal dt,
+                                   const UT_Vector3& minBound,
+                                   const UT_Vector3& maxBound) {
+    (void)geo; // bounds are precomputed by computeAbrasion
     UT_Vector3 windDir = windDirection;
     windDir.normalize();
 
-    // Expansion: 2x the sandstone domain.
-    UT_Vector3 size(geo.grid.res[0] * geo.grid.dx, geo.grid.res[1] * geo.grid.dx, geo.grid.res[2] * geo.grid.dx);
-    UT_Vector3 center = geo.grid.origin + size * 0.5;
-    UT_Vector3 expandedSize = size * WIND_DOMAIN_EXPANSION;
-    UT_Vector3 minBound = center - expandedSize * 0.5;
-    UT_Vector3 maxBound = center + expandedSize * 0.5;
-
-    // Number of particles to emit this step.
-    int emitCount = (int)(1000 * dt * windSpeed); // Heuristic rate
-    
     // Probabilistic face selection based on wind direction components.
     fpreal ax = SYSabs(windDir.x());
     fpreal ay = SYSabs(windDir.y());
     fpreal az = SYSabs(windDir.z());
     fpreal totalFlux = ax + ay + az;
-    
+
     if (totalFlux < 1e-6) return;
+    if (windSpeed <= 0)   return;
+
+    // Number of particles to emit this step.  The heuristic rate scales
+    // with windSpeed * dt, but we floor at 1 whenever wind is active so
+    // that very low windSpeed * dt doesn't truncate to zero (which would
+    // give the appearance of no abrasion at all).
+    int emitCount = (int)(1000 * dt * windSpeed);
+    if (emitCount < 1) emitCount = 1;
+
+    // Nudge spawn positions a hair INSIDE the wind-domain box so that
+    // the cleanup pass (which uses strict `< minBound` / `> maxBound`
+    // tests) cannot remove a freshly-emitted particle on the same step
+    // due to floating-point rounding on the boundary face.
+    const fpreal eps = 1e-4;
 
     for (int i = 0; i < emitCount; ++i) {
         WindParticle wp;
@@ -158,17 +175,17 @@ void WindSolver::emitWindParticles(const AreniteGeometry& geo, fpreal dt) {
         fpreal r = (fpreal)rand() / RAND_MAX * totalFlux;
         
         if (r < ax) { // X-face
-            wp.pos.x() = (windDir.x() > 0) ? minBound.x() : maxBound.x();
+            wp.pos.x() = (windDir.x() > 0) ? minBound.x() + eps : maxBound.x() - eps;
             wp.pos.y() = minBound.y() + (fpreal)rand() / RAND_MAX * (maxBound.y() - minBound.y());
             wp.pos.z() = minBound.z() + (fpreal)rand() / RAND_MAX * (maxBound.z() - minBound.z());
         }
         else if (r < ax + ay) { // Y-face
-            wp.pos.y() = (windDir.y() > 0) ? minBound.y() : maxBound.y();
+            wp.pos.y() = (windDir.y() > 0) ? minBound.y() + eps : maxBound.y() - eps;
             wp.pos.x() = minBound.x() + (fpreal)rand() / RAND_MAX * (maxBound.x() - minBound.x());
             wp.pos.z() = minBound.z() + (fpreal)rand() / RAND_MAX * (maxBound.z() - minBound.z());
         }
         else { // Z-face
-            wp.pos.z() = (windDir.z() > 0) ? minBound.z() : maxBound.z();
+            wp.pos.z() = (windDir.z() > 0) ? minBound.z() + eps : maxBound.z() - eps;
             wp.pos.x() = minBound.x() + (fpreal)rand() / RAND_MAX * (maxBound.x() - minBound.x());
             wp.pos.y() = minBound.y() + (fpreal)rand() / RAND_MAX * (maxBound.y() - minBound.y());
         }

@@ -79,7 +79,13 @@ private:
     void computeAbrasion(AreniteGeometry& geo, fpreal dt);
 
     // ── SPH Helpers ────────────────────────────────────────────────────────
-    void emitWindParticles(const AreniteGeometry& geo, fpreal dt);
+    /// Spawn new wind particles on the upstream face of the wind domain.
+    /// @p windMin / @p windMax must be the SAME box used by the cleanup
+    /// pass in computeAbrasion -- otherwise emitted particles can fall
+    /// outside the cleanup region and be removed on the very same step.
+    void emitWindParticles(const AreniteGeometry& geo, fpreal dt,
+                           const UT_Vector3& windMin,
+                           const UT_Vector3& windMax);
     void updateWindParticles(const AreniteGeometry& geo, fpreal dt);
     
     /// Cubic spline kernel W(r, h).
