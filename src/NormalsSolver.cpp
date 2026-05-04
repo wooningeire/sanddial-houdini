@@ -160,10 +160,21 @@ void NormalsSolver::solve(AreniteGeometry& geo) {
         p.isSurface = (densities[i] < surfaceThreshold);
     }
 
-    // ── 5. Estimate normals for surface particles ───────────────────────
+    // ── 5. Estimate normals for particles that may feed the mesher ──────
+    //    Surface particles are the natural candidates, but sediment
+    //    particles are *also* shipped to the Poisson mesher even when
+    //    they fail the SPH-density surface test (the surface threshold
+    //    is dominated by the deep sandstone interior, so sediment that
+    //    sits on top of -- or wedged against -- sandstone has its local
+    //    density inflated by the underlying rock and gets misclassified
+    //    as "interior").  Computing a normal for every non-eroded
+    //    sediment particle here ensures the mesher never sees stale or
+    //    default-up normals, which would otherwise fragment the
+    //    reconstructed sediment surface.
     for (exint i = 0; i < geo.particles.size(); ++i) {
         auto& p = geo.particles[i];
-        if (p.isSurface && !p.isEroded) {
+        if (p.isEroded) continue;
+        if (p.isSurface || p.isSediment) {
             p.normal = estimateNormal(geo, i, h);
         }
     }

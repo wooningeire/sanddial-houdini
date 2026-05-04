@@ -29,7 +29,16 @@ struct ArenitePointStream
             const auto& part = geo.particles(idx);
             ++idx;
             if (part.isEroded) continue;
-            if (!part.isSurface) continue;
+            // For sediment-only meshing, accept *every* deposited
+            // particle (not just those flagged isSurface).  The SPH-
+            // density surface test mis-classifies sediment lying on top
+            // of dense sandstone -- the underlying rock inflates the
+            // local density past the global "0.75 * maxDensity" cut-off,
+            // so genuine surface sediment gets dropped.  Including all
+            // sediment also gives Poisson a much denser input cloud,
+            // which is what bridges the gaps in scattered deposits.
+            const bool requireSurface = (filter != MeshFilter::SedimentOnly);
+            if (requireSurface && !part.isSurface) continue;
             if (filter == MeshFilter::SandstoneOnly && part.isSediment) continue;
             if (filter == MeshFilter::SedimentOnly && !part.isSediment) continue;
 
@@ -90,11 +99,15 @@ void PoissonMesher::reconstruct(const AreniteGeometry& geo,
 {
     if (!outputGeo) return;
 
-    // Count eligible particles (surface + alive + filter)
+    // Count eligible particles (surface + alive + filter).  Must mirror
+    // the gating in ArenitePointStream::read above: sediment-only
+    // meshing skips the isSurface check so the count stays in sync.
+    const bool requireSurface = (filter != MeshFilter::SedimentOnly);
     int eligibleCount = 0;
     for (exint i = 0; i < geo.particles.entries(); ++i) {
         const auto& p = geo.particles(i);
-        if (p.isEroded || !p.isSurface) continue;
+        if (p.isEroded) continue;
+        if (requireSurface && !p.isSurface) continue;
         if (filter == MeshFilter::SandstoneOnly && p.isSediment) continue;
         if (filter == MeshFilter::SedimentOnly && !p.isSediment) continue;
         ++eligibleCount;
@@ -109,9 +122,25 @@ void PoissonMesher::reconstruct(const AreniteGeometry& geo,
     using FEMSigs = IsotropicUIntPack<3, FEMSig>;
 
     ReconType::SolutionParameters<float> solverParams;
-    solverParams.depth = (unsigned int)depth;
-    solverParams.scale = scale;
+    solverParams.depth   = (unsigned int)depth;
+    solverParams.scale   = scale;
     solverParams.verbose = false;
+
+    // Adaptive params for sparse input (e.g. scattered sediment).
+    //
+    // PoissonRecon's defaults (samplesPerNode = 1.5, kernelDepth =
+    // depth - 2) are tuned for laser-scan-style dense oriented samples.
+    // Sediment particles are typically ~1 per voxel and form a thin,
+    // patchy layer, which gives a noisy density estimate and a level
+    // set that fragments into disconnected blobs (the visual symptom
+    // the user reported).  For sediment, widen the density-estimation
+    // kernel by lowering kernelDepth and require more samples per node
+    // so the reconstructor smooths over inter-particle gaps.
+    if (filter == MeshFilter::SedimentOnly) {
+        solverParams.samplesPerNode = 5.0f;
+        const int wideKernel = (int)depth - 4;
+        solverParams.kernelDepth = (unsigned int)(wideKernel < 0 ? 0 : wideKernel);
+    }
 
     // ── Solve ───────────────────────────────────────────────────────────
     ArenitePointStream pointStream(geo, filter);
