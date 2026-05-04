@@ -775,11 +775,14 @@ OP_ERROR SOP_Sanddial::cookMySop(OP_Context& context) {
                     GA_Offset ptoff;
                     GA_FOR_ALL_PTOFF(gdp, ptoff) {
                         if (sedH.isValid() && sedH.get(ptoff)) {
-                            cdH.set(ptoff, UT_Vector3(0.8, 0.7, 0.4)); // Sandy color
+                            cdH.set(ptoff, UT_Vector3(0.45, 0.35, 0.2)); // Dark sandy
                             continue;
                         }
                         fpreal e = SYSclamp(erodH.get(ptoff), 0.0, 1.0);
-                        UT_Vector3 color(e, 0.2 * (1.0 - e), 1.0 - e);
+                        // Dark blue (hard, low erodibility) → dark red (soft, high erodibility)
+                        UT_Vector3 hard(0.1, 0.2, 1);
+                        UT_Vector3 soft(1, 0.1, 0.1);
+                        UT_Vector3 color = hard * (1.0 - e) + soft * e;
                         cdH.set(ptoff, color);
                     }
                 }

@@ -73,6 +73,12 @@ class State(object):
         self._node = kwargs.get("node", None) or self._node
         self._brush_drawable.show(True)
         self.scene_viewer.setPromptMessage(self.MSG)
+        # Auto-switch to erodibility visualization when entering paint mode
+        if self._node:
+            try:
+                self._node.parm("visualize_mode").set(1)
+            except Exception:
+                pass
         print("Sanddial Paint: onEnter")
 
     def onExit(self, kwargs):
@@ -186,25 +192,27 @@ class State(object):
                 bbox = geo.boundingBox()
                 center = bbox.center()
 
-                # Get view direction for a view-aligned plane
+                # Get the view-to-scene forward vector from the current viewport.
+                # viewTransform() row 2 is the camera's local +Z, which points
+                # FROM the scene TOWARD the camera.  Negate it to get the
+                # into-scene forward direction used as the plane normal.
                 vp = self.scene_viewer.curViewport()
                 if vp:
                     view_xform = vp.viewTransform()
-                    view_dir = hou.Vector3(
-                        view_xform.at(2, 0),
-                        view_xform.at(2, 1),
-                        view_xform.at(2, 2),
+                    # Row 2 = camera +Z (toward camera); negate for into-scene normal
+                    plane_normal = hou.Vector3(
+                        -view_xform.at(2, 0),
+                        -view_xform.at(2, 1),
+                        -view_xform.at(2, 2),
                     ).normalized()
                 else:
-                    view_dir = hou.Vector3(0, 0, 1)
+                    plane_normal = hou.Vector3(0, 0, -1)
 
-                # Intersect ray with a view-aligned plane through the geo center
-                # Plane equation: dot(view_dir, P - center) = 0
-                # Ray: P = ray_origin + t * ray_dir
-                # t = dot(view_dir, center - ray_origin) / dot(view_dir, ray_dir)
-                denom = view_dir.dot(ray_dir)
+                # Intersect ray with a view-aligned plane through the geo center.
+                # t = dot(plane_normal, center - ray_origin) / dot(plane_normal, ray_dir)
+                denom = plane_normal.dot(ray_dir)
                 if abs(denom) > 1e-8:
-                    t = view_dir.dot(center - ray_origin) / denom
+                    t = plane_normal.dot(center - ray_origin) / denom
                     if t > 0:
                         self._brush_pos = hou.Vector3(
                             ray_origin[0] + ray_dir[0] * t,
@@ -281,27 +289,37 @@ class State(object):
     # ── Helpers ──────────────────────────────────────────────────────────
 
     def _update_brush_xform(self, radius):
-        """Position and scale the drawable ring to face the camera."""
-        # Get the camera/view direction from the current viewport
+        """Position and scale the drawable ring to face the camera.
+        
+        _make_circle_geo() builds the ring in the XZ plane (all Y=0),
+        so its natural normal is +Y.  We need to rotate so that +Y maps
+        to the toward-camera direction (viewTransform row 2).
+        """
         vp = self.scene_viewer.curViewport()
         if vp:
             view_xform = vp.viewTransform()
-            # The view's Z axis (third row) points from the scene toward the camera
-            # We want the ring normal to face the camera
-            cam_z = hou.Vector3(view_xform.at(2, 0), view_xform.at(2, 1), view_xform.at(2, 2)).normalized()
+            # Row 2 of the view transform is the camera's local +Z in world
+            # space, which points FROM the scene TOWARD the camera.
+            cam_toward = hou.Vector3(
+                view_xform.at(2, 0),
+                view_xform.at(2, 1),
+                view_xform.at(2, 2),
+            ).normalized()
         else:
-            cam_z = hou.Vector3(0, 0, 1)
+            cam_toward = hou.Vector3(0, 1, 0)
 
-        up = cam_z
-        ref = hou.Vector3(0, 1, 0) if abs(up[1]) < 0.99 else hou.Vector3(1, 0, 0)
-        right = up.cross(ref).normalized()
-        fwd = right.cross(up).normalized()
+        # We want the ring's +Y (its normal) to point toward the camera.
+        # Pick a stable "up" reference that isn't parallel to cam_toward.
+        ref   = hou.Vector3(0, 0, 1) if abs(cam_toward[1]) > 0.9 else hou.Vector3(0, 1, 0)
+        right = cam_toward.cross(ref).normalized()   # ring's +X
+        fwd   = right.cross(cam_toward).normalized() # ring's +Z
 
+        # Matrix rows: X=right, Y=cam_toward (ring normal), Z=fwd
         m = hou.Matrix4((
-            right[0] * radius, right[1] * radius, right[2] * radius, 0,
-            up[0] * radius,    up[1] * radius,    up[2] * radius,    0,
-            fwd[0] * radius,   fwd[1] * radius,   fwd[2] * radius,  0,
-            self._brush_pos[0], self._brush_pos[1], self._brush_pos[2], 1,
+            right[0]      * radius, right[1]      * radius, right[2]      * radius, 0,
+            cam_toward[0] * radius, cam_toward[1] * radius, cam_toward[2] * radius, 0,
+            fwd[0]        * radius, fwd[1]        * radius, fwd[2]        * radius, 0,
+            self._brush_pos[0],     self._brush_pos[1],     self._brush_pos[2],     1,
         ))
         self._brush_drawable.setTransform(m)
 
