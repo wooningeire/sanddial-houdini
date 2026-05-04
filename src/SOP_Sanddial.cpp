@@ -325,6 +325,8 @@ OP_Node* SOP_Sanddial::myConstructor(OP_Network* net, const char* name, OP_Opera
 SOP_Sanddial::SOP_Sanddial(OP_Network* net, const char* name, OP_Operator* op)
     : SOP_Node(net, name, op) {
     mySopFlags.setNeedGuide1(true);
+    // Time-dependency is set per-output in each cook method; only the
+    // particle output (output 0 / cookMySop) is time-dependent.
 }
 
 SOP_Sanddial::~SOP_Sanddial() {}
@@ -832,6 +834,8 @@ OP_ERROR SOP_Sanddial::cookMyGuide1(OP_Context& context) {
     if (inputs.lock(context) >= UT_ERROR_ABORT)
         return error();
 
+    // Guide 1 (wind particles) follows the particle output — time-dependent.
+    flags().setTimeDep(true);
     fpreal t = context.getTime();
     int showWind = evalInt("show_wind", 0, t);
     if (!showWind) {
@@ -859,58 +863,47 @@ OP_ERROR SOP_Sanddial::cookMyGuide1(OP_Context& context) {
 }
 
 GU_DetailHandle SOP_Sanddial::cookMySopOutput(OP_Context& context, int outputidx, SOP_Node* interest) {
-    if (outputidx == 0) {
-        // This is usually handled by cookMySop, but we should return a valid handle if asked.
-        cookMySop(context);
-        GU_Detail* new_gdp = new GU_Detail();
-        new_gdp->copy(*gdp);
-        GU_DetailHandle handle;
-        handle.allocateAndSet(new_gdp);
-        return handle;
+    if (outputidx != 1 && outputidx != 2)
+        return GU_DetailHandle();
+
+    OP_AutoLockInputs inputs(this);
+    if (inputs.lock(context) >= UT_ERROR_ABORT)
+        return GU_DetailHandle();
+
+    flags().setTimeDep(true);
+    if (interest)
+        interest->flags().setTimeDep(true);
+
+    fpreal t = context.getTime();
+    loadParameters(t);
+
+    fpreal fps = OPgetDirector()->getChannelManager()->getSamplesPerSec();
+    int frame = (int)SYSrint(t * fps) + 1;
+
+    int simState = evalInt("sim_state", 0, t);
+    if (simState == 0) {
+        frame = evalInt("lock_frame", 0, t);
+        if (frame < myStartFrame) frame = myStartFrame;
     }
 
-    if (outputidx == 1 || outputidx == 2) {
-        OP_AutoLockInputs inputs(this);
-        if (inputs.lock(context) >= UT_ERROR_ABORT)
-            return GU_DetailHandle();
+    const GU_Detail* srcGeo = inputGeo(0, context);
+    if (!srcGeo)
+        return GU_DetailHandle();
 
-        flags().setTimeDep(true);
-        fpreal t = context.getTime();
-        loadParameters(t);
+    getFrameResult(frame, srcGeo, fps);
+    myNormalsSolver.solve(myGeo);
 
-        fpreal fps = OPgetDirector()->getChannelManager()->getSamplesPerSec();
-        int frame = (int)SYSrint(t * fps) + 1;
+    MeshFilter filter = (outputidx == 1) ? MeshFilter::SandstoneOnly
+                                          : MeshFilter::SedimentOnly;
 
-        int simState = evalInt("sim_state", 0, t);
-        if (simState == 0) {
-            frame = evalInt("lock_frame", 0, t);
-            if (frame < myStartFrame) frame = myStartFrame;
-        }
+    GU_Detail* meshGdp = new GU_Detail();
+    myMesher.reconstruct(myGeo, meshGdp, myPoissonDepth,
+                         (float)myPoissonScale, filter);
 
-        const GU_Detail* srcGeo = inputGeo(0, context);
-        if (srcGeo) {
-            // Ensure simulation is up to date for the mesh
-            getFrameResult(frame, srcGeo, fps);
-        }
+    if (mySubdivIterations > 0)
+        myLS3.subdivide(meshGdp, mySubdivIterations);
 
-        // Re-compute normals for meshing
-        myNormalsSolver.solve(myGeo);
-
-        MeshFilter filter = (outputidx == 1) ? MeshFilter::SandstoneOnly
-                                              : MeshFilter::SedimentOnly;
-
-        GU_Detail* meshGdp = new GU_Detail();
-        myMesher.reconstruct(myGeo, meshGdp, myPoissonDepth,
-                             (float)myPoissonScale, filter);
-
-        if (mySubdivIterations > 0) {
-            myLS3.subdivide(meshGdp, mySubdivIterations);
-        }
-
-        GU_DetailHandle handle;
-        handle.allocateAndSet(meshGdp);
-        return handle;
-    }
-
-    return GU_DetailHandle();
+    GU_DetailHandle handle;
+    handle.allocateAndSet(meshGdp);
+    return handle;
 }
