@@ -53,6 +53,7 @@ static int enterPaintCB(void* data, int /*index*/, fpreal64 /*time*/,
         "        except: pass\n"
         "        _n.setSelected(True, clear_all_selected=True)\n"
         "        _n.setCurrent(True, True)\n"
+        "        _n.parm('visualize_mode').set('erodibility')\n"
         "        def _enter(_v=_v): _v.setCurrentState('sop_sanddial_erodibility_paint')\n"
         "        hou.ui.postEventCallback(_enter)\n",
         node->getFullPath().c_str());
