@@ -22,7 +22,7 @@ struct AreniteParticle {
     UT_Matrix3  apicC;
 
     /// User-paintable erodibility coefficient in [0, 1].
-    fpreal      erodibility = 1.0;
+    fpreal      erodibility = 0.05;
 
     /// Accumulated erosion "viability". Starts at 1; the particle is eroded
     /// when this falls below 0.

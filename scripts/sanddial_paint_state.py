@@ -57,6 +57,12 @@ class State(object):
         self._is_painting = False
         self._debug_logged = False
 
+        # Monotonically-increasing stroke ID written to brush_stroke_id.
+        # Each call ultimately produces a stroke even if mouse events arrive
+        # between SOP cooks, because every set() value is unique.  Falls
+        # back to toggling brush_active on older C++ builds.
+        self._stroke_counter = 0
+
         # Find the sanddial node immediately
         self._node = None
         for n in hou.node('/').allSubChildren():
@@ -73,12 +79,44 @@ class State(object):
         self._node = kwargs.get("node", None) or self._node
         self._brush_drawable.show(True)
         self.scene_viewer.setPromptMessage(self.MSG)
-        # Auto-switch to erodibility visualization when entering paint mode
         if self._node:
+            # Auto-switch to erodibility visualization on state entry.
             try:
                 self._node.parm("visualize_mode").set(1)
             except Exception:
                 pass
+
+            # Strip any stale keyframes/animation on the brush-trigger parms
+            # so subsequent Python .set() calls write plain values rather
+            # than creating new keyframes.
+            for pname in ("brush_active", "brush_stroke_id",
+                          "brush_posx", "brush_posy", "brush_posz"):
+                try:
+                    p = self._node.parm(pname)
+                    if p is not None:
+                        p.deleteAllKeyframes()
+                except Exception:
+                    pass
+
+            # Re-sync the stroke counter to whatever value is currently in
+            # the parm, so the very first _apply_brush call after re-entry
+            # produces a value the C++ side has not yet seen.
+            try:
+                cur = int(self._node.evalParm("brush_stroke_id") or 0)
+                self._stroke_counter = cur
+            except Exception:
+                pass
+
+            # Loud diagnostic: if the C++ HDA hasn't been rebuilt with the
+            # new trigger parm, drag painting will silently use the lossy
+            # toggle fallback.  Surface this so it isn't a mystery.
+            if self._node.parm("brush_stroke_id") is None:
+                print("Sanddial Paint WARNING: 'brush_stroke_id' parm is "
+                      "missing on the node.  This means the C++ HDA is "
+                      "from an older build.  Rebuild the project for "
+                      "reliable drag painting; otherwise the state will "
+                      "fall back to the brush_active toggle which loses "
+                      "strokes when mouse events outpace SOP cooks.")
         print("Sanddial Paint: onEnter")
 
     def onExit(self, kwargs):
@@ -165,7 +203,12 @@ class State(object):
             # Get the mouse ray
             ray_origin, ray_dir = ui_event.ray()
 
-            # Get geometry for depth reference
+            # node.geometry() returns the SOP's last cooked geometry and, if
+            # the node is dirty, force-completes the pending cook before
+            # returning.  We rely on this implicit per-event cook to keep
+            # painting reliable: the previous event's brush parm changes are
+            # committed here before we read the geometry for sphere tracing
+            # or write the next stroke's parms.
             geo = None
             if node:
                 geo = node.geometry()
@@ -196,17 +239,17 @@ class State(object):
                 ray_origin_v = hou.Vector3(ray_origin[0], ray_origin[1], ray_origin[2])
                 ray_dir_v = hou.Vector3(ray_dir[0], ray_dir[1], ray_dir[2]).normalized()
 
-                # Inter-particle spacing controls hit tolerance and walk step.
-                # voxel_size on the node mirrors the simulation grid spacing,
-                # which is also the natural particle spacing.
+                # Inter-particle spacing controls hit tolerance.  voxel_size
+                # on the node mirrors the simulation grid spacing, which is
+                # also the natural particle spacing.
                 voxel = 0.2
                 if node:
                     try:
                         voxel = float(node.evalParm("voxel_size"))
                     except Exception:
                         pass
-                tol  = max(voxel * 1.5, 0.01)
-                step = max(voxel * 0.5, 0.005)
+                tol      = max(voxel * 2.0, 0.01)
+                min_step = max(voxel * 0.25, 0.005)
 
                 # Restrict the walk to the segment of the ray that overlaps
                 # the geometry's bounding sphere (cheap superset of the bbox).
@@ -215,29 +258,40 @@ class State(object):
                 t_min = max(0.0, t_center - bbox_diag)
                 t_max = t_center + bbox_diag
 
-                # March along the ray; the first sample whose nearest particle
-                # is within `tol` is treated as the surface hit.  Houdini's
-                # nearestPoint() is KD-tree backed so this is cheap.
+                # Sphere-trace the ray against the point cloud.  At each
+                # sample, nearestPoint() gives the distance `d` to the
+                # closest particle; by the triangle inequality no particle
+                # can come within `tol` of the ray for the next `d - tol`
+                # units, so we can safely skip that whole interval.
                 hit_pos = None
                 t = t_min
-                while t <= t_max:
+                for _ in range(32):  # safety bound; typical convergence < 10
+                    if t > t_max:
+                        break
                     sample = ray_origin_v + ray_dir_v * t
                     nearest_pt = geo.nearestPoint(sample)
-                    if nearest_pt is not None:
-                        np_pos = nearest_pt.position()
-                        if (np_pos - sample).length() < tol:
-                            hit_pos = np_pos
-                            break
-                    t += step
+                    if nearest_pt is None:
+                        break
+                    d = (nearest_pt.position() - sample).length()
+                    if d < tol:
+                        # Use the ray sample (not the snapped particle) so a
+                        # drag produces a smooth, continuous stroke instead
+                        # of jumping discretely from particle to particle.
+                        # The C++ brush still applies a radial falloff in
+                        # world space, so painting around `sample` affects
+                        # the cluster of particles the user is hovering over.
+                        hit_pos = sample
+                        break
+                    t += max(d - tol, min_step)
 
                 if hit_pos is not None:
                     self._brush_pos = hit_pos
                     hit = True
                 else:
                     # Off-surface hover: fall back to a view-aligned plane
-                    # through the bbox center so the brush ring still
-                    # tracks the cursor.  Painting is gated on `hit`, so
-                    # nothing gets painted while the brush is in empty space.
+                    # through the bbox center so the brush ring still tracks
+                    # the cursor.  Painting is gated on `hit`, so nothing is
+                    # painted while the brush is in empty space.
                     vp = self.scene_viewer.curViewport()
                     if vp:
                         view_xform = vp.viewTransform()
@@ -272,9 +326,7 @@ class State(object):
                 self._is_painting = True
                 self.scene_viewer.beginStateUndo("Paint Erodibility")
 
-            if self._is_painting and hit and node and geo:
-                # _brush_pos is already a particle position from the
-                # ray-surface intersection above.
+            if self._is_painting and hit and node:
                 self._apply_brush(node, self._brush_pos)
 
             if not is_lmb and self._is_painting:
@@ -356,16 +408,53 @@ class State(object):
         self._brush_drawable.setTransform(m)
 
     def _apply_brush(self, node, paint_pos=None):
-        """Write brush parameters to the node so the C++ cook applies them."""
+        """Write brush parameters to the node so the C++ cook applies them.
+
+        Preferred trigger: `brush_stroke_id` (PRM_INT, hidden) -- a
+        monotonically-increasing counter.  C++ fires a stroke whenever the
+        value differs from the last-seen value, so each call is guaranteed
+        to produce a stroke even if many mouse events arrive between SOP
+        cooks.
+
+        Fallback for older C++ builds that don't expose brush_stroke_id:
+        toggle the public `brush_active` 0/1 parm.  This still has the
+        cancellation race (0->1->0 between cooks drops the stroke), but
+        is better than no trigger at all.  We log a one-time warning so
+        the user knows to rebuild for reliable drag painting.
+        """
         if not node:
             return
         pos = paint_pos if paint_pos is not None else self._brush_pos
+
+        # 1. Brush position is needed by either trigger path.
         try:
             node.parmTuple("brush_pos").set((pos[0], pos[1], pos[2]))
-            cur_active = node.evalParm("brush_active")
-            node.parm("brush_active").set(1 if cur_active == 0 else 0)
         except Exception as e:
-            print("Sanddial Paint _apply_brush error:", e)
+            print("Sanddial Paint: brush_pos set failed:", e)
+            return
+
+        self._stroke_counter += 1
+
+        # 2. Preferred path: monotonic counter.
+        stroke_parm = node.parm("brush_stroke_id")
+        if stroke_parm is not None:
+            try:
+                stroke_parm.set(self._stroke_counter)
+                return
+            except Exception as e:
+                print("Sanddial Paint: brush_stroke_id set failed:", e)
+
+        # 3. Fallback path: brush_active toggle (race-prone but functional).
+        if not getattr(self, "_warned_no_stroke_id", False):
+            print("Sanddial Paint WARNING: brush_stroke_id parm not found. "
+                  "Rebuild the C++ HDA for reliable drag painting; falling "
+                  "back to brush_active toggle (some strokes may be lost).")
+            self._warned_no_stroke_id = True
+        try:
+            cur = int(node.evalParm("brush_active") or 0)
+            node.parm("brush_active").set(0 if cur else 1)
+        except Exception as e:
+            print("Sanddial Paint: brush_active toggle failed:", e)
 
 
 def createViewerStateTemplate():

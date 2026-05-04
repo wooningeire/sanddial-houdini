@@ -64,7 +64,8 @@ private:
     std::vector<GU_DetailHandle> myBakeHistory;
     std::vector<int> myBakeFrameHistory;
     int myStartFrame = 1;
-    int myLastBrushToggle = 0;
+    int myLastBrushToggle   = 0;
+    int myLastBrushStrokeId = 0;
     GA_DataId myInputDataId = GA_INVALID_DATAID;
 
     // ── Parameter cache ─────────────────────────────────────────────────────

@@ -19,15 +19,29 @@ void WindSolver::computeDeflation(AreniteGeometry& geo) {
 
     fpreal twoAlphaSq = 2.0 * windAlpha * windAlpha;
 
+    // Wind speed follows a logarithmic boundary layer profile near the ground.
+    // We use a simple linear ramp over one smoothing length as an approximation:
+    // occlusion = clamp((y - groundY) / boundaryLayerHeight, 0, 1)
+    // Particles at or below groundY receive zero deflation.
+    fpreal boundaryLayerHeight = smoothingLength > 0 ? smoothingLength : geo.grid.dx;
+
     for (auto& p : geo.particles) {
         if (p.isEroded || !p.isSurface) continue;
+
+        // Ground-plane occlusion factor.
+        fpreal groundOcclusion = 1.0;
+        if (geo.useGroundPlane) {
+            fpreal heightAboveGround = p.position.y() - geo.groundY;
+            groundOcclusion = SYSclamp(heightAboveGround / boundaryLayerHeight, fpreal(0.0), fpreal(1.0));
+        }
+        if (groundOcclusion <= 0.0) continue;
 
         fpreal trSigma = p.stressTensor(0, 0)
                         + p.stressTensor(1, 1)
                         + p.stressTensor(2, 2);
 
         fpreal Fcn = cohesion + frictionCoeff * trSigma;
-        fpreal Wd = deflationCoeff * SYSexp(-(Fcn * Fcn) / twoAlphaSq);
+        fpreal Wd = deflationCoeff * SYSexp(-(Fcn * Fcn) / twoAlphaSq) * groundOcclusion;
         p.erosionValue += Wd;
         p.deflationErosion += Wd;
     }

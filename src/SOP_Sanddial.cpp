@@ -235,8 +235,18 @@ static PRM_Name    prm_subdivIterName("subdiv_iterations", "Subdivision Iteratio
 static PRM_Default prm_subdivIterDefault(2);
 
 // ── Brush ──────────────────────────────────────────────────────────────────
+// brush_active is a manual "Apply Brush" toggle (kept as PRM_TOGGLE for
+// backward compatibility with .hip files).  brush_stroke_id (below) is a
+// monotonically-increasing stroke ID written by the paint viewer state on
+// every mouse event during a drag; C++ applies a stroke whenever EITHER
+// value changes since the last cook.  The separate counter makes stroke
+// triggering immune to 0/1 value-cancellation when Python events outpace
+// SOP cooks during a fast drag.
 static PRM_Name    prm_brushActiveName("brush_active", "Apply Brush");
 static PRM_Default prm_brushActiveDefault(0);
+
+static PRM_Name    prm_brushStrokeIdName("brush_stroke_id", "Brush Stroke ID");
+static PRM_Default prm_brushStrokeIdDefault(0);
 
 static PRM_Name    prm_brushPosName("brush_pos", "Brush Position");
 static PRM_Default prm_brushPosDefaults[] = {
@@ -371,6 +381,8 @@ PRM_Template SOP_Sanddial::myTemplateList[] = {
 
     // ── Brush (6 params) ───────────────────────────────────────────────
     PRM_Template(PRM_TOGGLE, 1, &prm_brushActiveName, &prm_brushActiveDefault),
+    PRM_Template(PRM_INT | PRM_TYPE_INVISIBLE, 1,
+                 &prm_brushStrokeIdName, &prm_brushStrokeIdDefault),
     PRM_Template(PRM_FLT_J, 3, &prm_brushPosName,    prm_brushPosDefaults),
     PRM_Template(PRM_FLT, 1, &prm_brushRadiusName,   &prm_brushRadiusDefault,
                  0, &prm_brushRadiusRange),
@@ -409,20 +421,6 @@ SOP_Sanddial::~SOP_Sanddial() {}
 void SOP_Sanddial::initializeSimulation(const GU_Detail* inputGeo) {
     // Populate AreniteGeometry from Houdini's input geometry.
     myGeo.initFromHoudiniGeo(inputGeo);
-
-    // Initialize erodibility from normalized Y if the input didn't have it.
-    if (!inputGeo->findPointAttribute("erodibility")) {
-        fpreal yMin = 1e18, yMax = -1e18;
-        for (const auto& p : myGeo.particles) {
-            if (p.position.y() < yMin) yMin = p.position.y();
-            if (p.position.y() > yMax) yMax = p.position.y();
-        }
-        fpreal yRange = (yMax - yMin);
-        if (yRange < 1e-9) yRange = 1.0;
-        for (auto& p : myGeo.particles) {
-            p.erodibility = (p.position.y() - yMin) / yRange;
-        }
-    }
 
     // Set up the voxel grid.
     myGeo.initGrid();
@@ -573,8 +571,16 @@ GU_DetailHandle SOP_Sanddial::getFrameResult(int frame, const GU_Detail* inputGe
         const GU_Detail* cachedGdp = it->second.gdp();
         if (cachedGdp) {
             myGeo.initFromHoudiniGeo(cachedGdp);
-            // Re-compute normals for the cached state to ensure mesh alignment
-            myNormalsSolver.solve(myGeo);
+            // NormalsSolver is intentionally NOT run here.  It is the most
+            // expensive per-cook operation (~10x the rest of the cache-hit
+            // path combined) and is only needed by:
+            //   - cookMySopOutput for meshing (it calls solve() explicitly
+            //     after getFrameResult, so this path is unaffected); and
+            //   - applyBrushStroke when surfaceOnly/depth_mode brush options
+            //     are enabled (uncommon; stale normals are acceptable when
+            //     they aren't).
+            // Skipping this call makes drag-painting cooks fast enough to
+            // keep up with mouse events.
             auto windIt = myWindCache.find(frame);
             if (windIt != myWindCache.end()) {
                 myWindSolver.setWindParticles(windIt->second);
@@ -749,9 +755,12 @@ OP_ERROR SOP_Sanddial::cookMySop(OP_Context& context) {
     loadParameters(t);
     GU_DetailHandle result = getFrameResult(frame, srcGeo, fps);
 
-    int brushActive = evalInt("brush_active", 0, t);
-    if (brushActive != myLastBrushToggle) {
-        myLastBrushToggle = brushActive;
+    int brushActive   = evalInt("brush_active",    0, t);
+    int brushStrokeId = evalInt("brush_stroke_id", 0, t);
+    if (brushActive   != myLastBrushToggle ||
+        brushStrokeId != myLastBrushStrokeId) {
+        myLastBrushToggle   = brushActive;
+        myLastBrushStrokeId = brushStrokeId;
         applyBrushStroke(t, frame);
         result = myFrameCache[frame];
     }
@@ -780,10 +789,27 @@ OP_ERROR SOP_Sanddial::cookMySop(OP_Context& context) {
                             continue;
                         }
                         fpreal e = SYSclamp(erodH.get(ptoff), 0.0, 1.0);
-                        // Dark blue (hard, low erodibility) → dark red (soft, high erodibility)
-                        UT_Vector3 hard(0.1, 0.2, 1);
-                        UT_Vector3 soft(1, 0.1, 0.1);
-                        UT_Vector3 color = hard * (1.0 - e) + soft * e;
+                        // Rainbow hue gradient: blue (0, hard) → cyan → green → yellow → red (1, soft)
+                        // Map e → hue in [240, 0] degrees (i.e. hue = (1-e)*240/360)
+                        fpreal hue = (1.0 - e) * (240.0 / 360.0); // 0.667 → 0.0
+                        fpreal s   = 1.0;
+                        fpreal v   = 0.9;
+                        // HSV → RGB (sector-based, no branches on floats)
+                        fpreal h6  = hue * 6.0;
+                        int    hi  = (int)h6 % 6;
+                        fpreal f   = h6 - (int)h6;
+                        fpreal p   = v * (1.0 - s);
+                        fpreal q   = v * (1.0 - s * f);
+                        fpreal t2  = v * (1.0 - s * (1.0 - f));
+                        UT_Vector3 color;
+                        switch (hi) {
+                            case 0: color = UT_Vector3(v,  t2, p);  break;
+                            case 1: color = UT_Vector3(q,  v,  p);  break;
+                            case 2: color = UT_Vector3(p,  v,  t2); break;
+                            case 3: color = UT_Vector3(p,  q,  v);  break;
+                            case 4: color = UT_Vector3(t2, p,  v);  break;
+                            default:color = UT_Vector3(v,  p,  q);  break;
+                        }
                         cdH.set(ptoff, color);
                     }
                 }
