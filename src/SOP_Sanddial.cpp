@@ -9,10 +9,16 @@
 #include <OP/OP_Director.h>
 #include <PRM/PRM_Include.h>
 #include <UT/UT_Vector3.h>
+#include <UT/UT_String.h>
 #include <CH/CH_Manager.h>
 #include <SYS/SYS_Math.h>
+#include <PY/PY_Python.h>
 
 // ── Viewport Mode ──────────────────────────────────────────────────────────
+// viewport_mode is kept as PRM_ORD with the original token choices so that
+// existing .hip files load without "Invalid channel" warnings.  It is now a
+// read-only indicator — state switching is done by the buttons below, not by
+// a parm-change callback.
 static PRM_Name prm_viewportModeName("viewport_mode", "Viewport Mode");
 static PRM_Name prm_viewportModeChoices[] = {
     PRM_Name("view",              "View"),
@@ -23,7 +29,66 @@ static PRM_Name prm_viewportModeChoices[] = {
 static PRM_ChoiceList prm_viewportModeMenu(PRM_CHOICELIST_SINGLE,
                                            prm_viewportModeChoices);
 
-static PRM_Name prm_visualizeModeName("visualize_mode", "Visualization");
+// Enter-state buttons.  PRM_CALLBACK fires in the UI thread (not inside a
+// cook), so setCurrentState() works immediately.
+//
+// The logic is inlined in the Python expression so it has zero dependency on
+// the sanddial_startup module being loaded or up-to-date in sys.modules.
+static int enterPaintCB(void* data, int /*index*/, fpreal64 /*time*/,
+                        const PRM_Template* /*tplate*/) {
+    OP_Node* node = static_cast<OP_Node*>(data);
+    if (!node) return 0;
+    UT_String expr;
+    expr.sprintf(
+        "import hou, toolutils\n"
+        "_n = hou.node('%s')\n"
+        "if _n:\n"
+        "    _v = toolutils.sceneViewer()\n"
+        "    if _v is None:\n"
+        "        _v = hou.ui.curDesktop().paneTabOfType(hou.paneTabType.SceneViewer)\n"
+        "    if _v:\n"
+        "        try: _v.pane().setIsCurrentTab()\n"
+        "        except: pass\n"
+        "        try: _v.setPwd(_n.parent())\n"
+        "        except: pass\n"
+        "        _n.setSelected(True, clear_all_selected=True)\n"
+        "        _n.setCurrent(True, True)\n"
+        "        def _enter(_v=_v): _v.setCurrentState('sop_sanddial_erodibility_paint')\n"
+        "        hou.ui.postEventCallback(_enter)\n",
+        node->getFullPath().c_str());
+    PYrunPythonStatementsAndExpectNoErrors(expr.c_str());
+    return 1;
+}
+static PRM_Name prm_enterPaintName("enter_paint_state", "Paint Erodibility");
+
+static int enterEnvCB(void* data, int /*index*/, fpreal64 /*time*/,
+                      const PRM_Template* /*tplate*/) {
+    OP_Node* node = static_cast<OP_Node*>(data);
+    if (!node) return 0;
+    UT_String expr;
+    expr.sprintf(
+        "import hou, toolutils\n"
+        "_n = hou.node('%s')\n"
+        "if _n:\n"
+        "    _v = toolutils.sceneViewer()\n"
+        "    if _v is None:\n"
+        "        _v = hou.ui.curDesktop().paneTabOfType(hou.paneTabType.SceneViewer)\n"
+        "    if _v:\n"
+        "        try: _v.pane().setIsCurrentTab()\n"
+        "        except: pass\n"
+        "        try: _v.setPwd(_n.parent())\n"
+        "        except: pass\n"
+        "        _n.setSelected(True, clear_all_selected=True)\n"
+        "        _n.setCurrent(True, True)\n"
+        "        def _enter(_v=_v): _v.setCurrentState('sop_sanddial_environment_edit')\n"
+        "        hou.ui.postEventCallback(_enter)\n",
+        node->getFullPath().c_str());
+    PYrunPythonStatementsAndExpectNoErrors(expr.c_str());
+    return 1;
+}
+static PRM_Name prm_enterEnvName("enter_env_state", "Edit Environment");
+
+static PRM_Name prm_visualizeModeName("visualize_mode", "Particle Color Visualization");
 static PRM_Name prm_visualizeModeChoices[] = {
     PRM_Name("nothing",     "Nothing"),
     PRM_Name("erodibility", "Erodibility"),
@@ -32,7 +97,7 @@ static PRM_Name prm_visualizeModeChoices[] = {
     PRM_Name("normals",     "Normals"),
     PRM_Name("deflation",   "Wind Deflation"),
     PRM_Name("abrasion",    "Wind Abrasion"),
-    PRM_Name("water",       "Water"),
+    // PRM_Name("water",       "Water"),
     PRM_Name("total_erosion", "Total Erosion"),
     PRM_Name(0)
 };
@@ -243,8 +308,16 @@ static PRM_Default prm_folderDefaults[] = {
 };
 
 PRM_Template SOP_Sanddial::myTemplateList[] = {
-    // Viewport mode selector (outside folders)
-    PRM_Template(PRM_ORD, 1, &prm_viewportModeName, 0, &prm_viewportModeMenu),
+    // viewport_mode: read-only ORD indicator (same type/tokens as before so
+    // existing .hip files load cleanly).  State switching is via the buttons.
+    PRM_Template(PRM_ORD | PRM_TYPE_INVISIBLE, 1,
+                 &prm_viewportModeName, 0, &prm_viewportModeMenu),
+
+    // Enter-state buttons.  Their PRM_CALLBACK runs synchronously in the UI
+    // thread (not inside a cook), so setCurrentState() works immediately.
+    PRM_Template(PRM_CALLBACK, 1, &prm_enterPaintName, 0, 0, 0, enterPaintCB),
+    PRM_Template(PRM_CALLBACK, 1, &prm_enterEnvName,   0, 0, 0, enterEnvCB),
+
     PRM_Template(PRM_ORD, 1, &prm_visualizeModeName, 0, &prm_visualizeModeMenu),
     PRM_Template(PRM_TOGGLE, 1, &prm_showWindName, &prm_showWindDefault),
 
@@ -690,12 +763,6 @@ OP_ERROR SOP_Sanddial::cookMySop(OP_Context& context) {
 
     // Viewport mode coloring
     int visualizeMode = evalInt("visualize_mode", 0, t);
-    
-    // If in Paint mode (1), we usually want to see erodibility unless "Nothing" is selected
-    int viewportMode = evalInt("viewport_mode", 0, t);
-    if (viewportMode == 1 && visualizeMode == 0) {
-        visualizeMode = 1; // Default to Erodibility in Paint mode
-    }
 
     if (visualizeMode > 0) {
         GA_RWHandleV3 cdH(gdp->addFloatTuple(GA_ATTRIB_POINT, "Cd", 3));

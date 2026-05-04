@@ -76,14 +76,29 @@ class State(object):
         print("Sanddial Paint: onEnter")
 
     def onExit(self, kwargs):
-        self._brush_drawable.show(False)
+        try:
+            self._brush_drawable.show(False)
+        except Exception:
+            pass
+        try:
+            node = self._node
+            if node:
+                node.parm("viewport_mode").set(0)
+        except Exception:
+            pass
         print("Sanddial Paint: onExit")
 
     def onResume(self, kwargs):
-        self._brush_drawable.show(True)
+        try:
+            self._brush_drawable.show(True)
+        except Exception:
+            pass
 
     def onInterrupt(self, kwargs):
-        self._brush_drawable.show(False)
+        try:
+            self._brush_drawable.show(False)
+        except Exception:
+            pass
 
     def onMenuAction(self, kwargs):
         """Handle menu item selection."""
@@ -125,16 +140,11 @@ class State(object):
             ui_event = kwargs["ui_event"]
             key = ui_event.device().keyString()
             if key == "Esc":
-                # Reset viewport_mode to 0 (View) on the node
-                if self._node:
-                    try:
-                        self._node.parm("viewport_mode").set(0)
-                    except:
-                        pass
-                # Switch back to select/view state
-                self.scene_viewer.setCurrentState("select")
+                import sanddial_startup as _sd
+                node_path = self._node.path() if self._node else ""
+                _sd._enter_state_from_button(node_path, 0)
                 return True
-        except:
+        except Exception:
             pass
         return False
 
@@ -142,16 +152,6 @@ class State(object):
 
     def onMouseEvent(self, kwargs):
         try:
-            # Auto-exit if viewport_mode changed to View (0)
-            if self._node:
-                try:
-                    mode = self._node.evalParm("viewport_mode")
-                    if mode == 0:
-                        self.scene_viewer.setCurrentState("select")
-                        return False
-                except:
-                    pass
-
             ui_event = kwargs["ui_event"]
             device = ui_event.device()
             node = self._node
@@ -327,7 +327,7 @@ def createViewerStateTemplate():
     template.bindIcon("SOP_paint")
     
     # Create the menu
-    menu = hou.ViewerStateMenu("sanddial_paint_menu", "Visualization")
+    menu = hou.ViewerStateMenu("sanddial_paint_menu", "Particle Color Visualization")
     menu.addActionItem("visualize_nothing", "Nothing")
     menu.addSeparator()
     menu.addActionItem("visualize_erodibility", "Erodibility")
@@ -337,7 +337,7 @@ def createViewerStateTemplate():
     menu.addSeparator()
     menu.addActionItem("visualize_deflation", "Wind Deflation")
     menu.addActionItem("visualize_abrasion", "Wind Abrasion")
-    menu.addActionItem("visualize_water", "Water")
+    # menu.addActionItem("visualize_water", "Water")
     menu.addActionItem("visualize_total", "Total Erosion")
     template.bindMenu(menu)
     

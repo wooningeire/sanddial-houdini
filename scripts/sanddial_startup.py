@@ -4,15 +4,14 @@ Documents/houdini21.0/python3.11libs/ (or equivalent path).
 
 Responsibilities
 ----------------
-1. Register the Environment Edit viewer state (the erodibility-paint state is
-   already registered by the HDA's own ViewerStateInstall section).
-2. Install a parameter-change callback on every Sanddial node that switches the
-   active viewer state whenever viewport_mode changes.
-3. Restore the callback when an existing Houdini session is opened.
+1. Register the Environment Edit viewer state.
+2. Register the Erodibility Paint viewer state.
+3. Expose _enter_state_from_button(), called directly by the C++ PRM_CALLBACK
+   buttons on the SOP.  Because PRM_CALLBACK runs in the UI thread (not inside
+   a cook), setCurrentState() works immediately — no deferred callbacks needed.
 """
 
 import hou
-import math
 import os
 import sys
 import types
@@ -20,22 +19,44 @@ import types
 # ── Constants ─────────────────────────────────────────────────────────────────
 _SANDDIAL_TYPE_NAMES = ("V_sanddial", "V::sanddial::1.0", "sanddial")
 _ENV_STATE           = "sop_sanddial_environment_edit"
+_PAINT_STATE         = "sop_sanddial_erodibility_paint"
+
 try:
-    _SCRIPTS_DIR = os.path.join(
-        os.path.dirname(os.path.abspath(__file__)),
-        "..", "..", "cis6600", "sanddial", "scripts",
-    )
+    _SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))
 except NameError:
     _SCRIPTS_DIR = r"C:\Users\V\_\penn\cis6600\sanddial\scripts"
 
 # ── Viewer-state registration ─────────────────────────────────────────────────
 
+def _register_state_from_file(filename, module_name, description):
+    """Load a viewer state from a .py file and register it. Returns True on success."""
+    candidates = [
+        os.path.join(_SCRIPTS_DIR, filename),
+        os.path.join(_SCRIPTS_DIR, "..", "..", "cis6600", "sanddial", "scripts", filename),
+        os.path.join(r"C:\Users\V\_\penn\cis6600\sanddial\scripts", filename),
+    ]
+    for path in candidates:
+        path = os.path.normpath(path)
+        if os.path.isfile(path):
+            with open(path, "r", encoding="utf-8") as fh:
+                src = fh.read()
+            mod = types.ModuleType(module_name)
+            exec(compile(src, path, "exec"), mod.__dict__)
+            sys.modules[module_name] = mod
+            tpl = mod.createViewerStateTemplate()
+            try:
+                hou.ui.unregisterViewerState(tpl.name())
+            except Exception:
+                pass
+            hou.ui.registerViewerState(tpl)
+            print(f"Sanddial startup: registered {description} (from {path})")
+            return True
+    print(f"Sanddial startup: WARNING — could not find {filename}")
+    return False
+
+
 def _load_env_state_from_hda():
-    """
-    Load and register the Environment Edit viewer state.
-    Tries the HDA section first; falls back to the standalone .py file.
-    """
-    # 1. Try HDA section
+    """Try HDA section first, fall back to standalone file."""
     for type_name in _SANDDIAL_TYPE_NAMES:
         node_type = hou.sopNodeTypeCategory().nodeTypes().get(type_name)
         if node_type is None:
@@ -50,195 +71,88 @@ def _load_env_state_from_hda():
             exec(compile(src, "ViewerStateModule_env", "exec"), mod.__dict__)
             sys.modules["sanddial_env_state_module"] = mod
             tpl = mod.createViewerStateTemplate()
+            try:
+                hou.ui.unregisterViewerState(tpl.name())
+            except Exception:
+                pass
             hou.ui.registerViewerState(tpl)
             print("Sanddial startup: registered", _ENV_STATE, "(from HDA section)")
             return True
 
-    # 2. Fallback: adjacent scripts/ directory
-    candidates = [
-        os.path.normpath(os.path.join(os.path.dirname(__file__),
-                                      "sanddial_env_state.py")),
-        os.path.normpath(os.path.join(os.path.dirname(__file__),
-                          "..", "_", "penn", "cis6600", "sanddial",
-                          "scripts", "sanddial_env_state.py")),
-        r"C:\Users\V\_\penn\cis6600\sanddial\scripts\sanddial_env_state.py",
-    ]
-    for path in candidates:
-        if os.path.isfile(path):
-            with open(path, "r", encoding="utf-8") as fh:
-                src = fh.read()
-            mod = types.ModuleType("sanddial_env_state_module")
-            exec(compile(src, path, "exec"), mod.__dict__)
-            sys.modules["sanddial_env_state_module"] = mod
-            tpl = mod.createViewerStateTemplate()
-            hou.ui.registerViewerState(tpl)
-            print("Sanddial startup: registered", _ENV_STATE, f"(from {path})")
-            return True
-
-    print("Sanddial startup: WARNING — could not load Environment Edit viewer state.")
-    return False
+    return _register_state_from_file(
+        "sanddial_env_state.py", "sanddial_env_state_module", _ENV_STATE)
 
 
-# ── Mode-switch callback ───────────────────────────────────────────────────────
+# ── Button entry point (called from C++ PRM_CALLBACK) ────────────────────────
 
-def _viewport_mode_changed(node, parm_tuple=None, **kwargs):
+def _enter_state_from_button(node_path, mode):
     """
-    Called whenever the viewport_mode parameter changes on a Sanddial node.
-    Activates the appropriate viewer state (or returns to default select).
+    Switch the Scene Viewer into the requested state.
+
+    Called directly by the C++ PRM_CALLBACK buttons (enter_paint_state /
+    enter_env_state).  PRM_CALLBACK runs in the UI thread, outside any cook,
+    so setCurrentState() is safe to call here without any deferral.
+
+    mode: 1 = Erodibility Paint, 2 = Environment Edit, 0 = View (select)
     """
     try:
+        node = hou.node(node_path)
         if node is None:
-            return
-            
-        # If this was called from a node ParmTupleChanged event, check the name
-        if parm_tuple and parm_tuple.name() != "viewport_mode":
-            return
-            
-        parm = node.parm("viewport_mode")
-        if not parm:
-            return
-            
-        val = parm.eval()
-        items = parm.menuItems()
-        
-        if val in items:
-            mode = items.index(val)
-        else:
-            try:
-                mode = int(val)
-            except:
-                mode = 0
-
-        # Find the scene viewer forcefully using toolutils
-        import toolutils
-        viewer = toolutils.sceneViewer()
-        if viewer is None:
-            # Fallback
-            desktop = hou.ui.curDesktop()
-            viewer = desktop.paneTabOfType(hou.paneTabType.SceneViewer)
-            
-        if viewer is None:
+            print(f"Sanddial: node not found at '{node_path}'")
             return
 
-        # Crucial: ensure Scene Viewer is looking at the same network level as the node!
+        # Update the hidden viewport_mode indicator so the cook and viewer
+        # states can read the current mode.
         try:
-            viewer.setPwd(node.parent())
-        except:
-            pass
-
-        # Force out of current view state by resetting to select first
-        try:
-            viewer.pane().setIsCurrentTab()
-            viewer.setPwd(node.parent())
-            viewer.setCurrentState('select')
-        except:
-            pass
-            
-        if mode == 1:   # Erodibility Paint
-            node.setSelected(True, clear_all_selected=True)
-            node.setCurrent(True, True)
-            try:
-                viewer.setPwd(node.parent())
-                viewer.setCurrentState('sop_sanddial_erodibility_paint')
-            except Exception as e:
-                print("Sanddial: Failed entering paint state:", e)
-        elif mode == 2: # Environment Edit
-            node.setSelected(True, clear_all_selected=True)
-            node.setCurrent(True, True)
-            try:
-                viewer.setCurrentState(_ENV_STATE)
-            except hou.OperationFailed:
-                print("Sanddial: env state failed.")
-        else:           # View (default)
-            pass # We already set select
-
-    except Exception as exc:
-        print("Sanddial _viewport_mode_changed error:", exc)
-
-
-def _on_parm_tuple_changed(**kwargs):
-    node = kwargs.get("node")
-    parm_tuple = kwargs.get("parm_tuple")
-    if node and parm_tuple and parm_tuple.name() == "viewport_mode":
-        _viewport_mode_changed(**kwargs)
-
-
-def _install_node_callback(node):
-    """Attach the viewport_mode callback to a single Sanddial node."""
-    # Remove stale callbacks first
-    node.removeAllEventCallbacks()
-    node.addEventCallback(
-        (hou.nodeEventType.ParmTupleChanged,),
-        _on_parm_tuple_changed
-    )
-    print(f"Sanddial: Installed reliable node event listener on {node.path()}")
-
-
-def _install_callbacks_on_all_nodes():
-    """Walk every node already in the scene and wire up Sanddial callbacks."""
-    for node in hou.node("/").allSubChildren():
-        try:
-            # Find ANY node that has a viewport_mode parm
-            if node.parm('viewport_mode') is not None:
-                _install_node_callback(node)
+            node.parm("viewport_mode").set(mode)
         except Exception:
             pass
 
+        import toolutils
+        viewer = toolutils.sceneViewer()
+        if viewer is None:
+            desktop = hou.ui.curDesktop()
+            viewer = desktop.paneTabOfType(hou.paneTabType.SceneViewer)
+        if viewer is None:
+            print("Sanddial: no Scene Viewer found")
+            return
 
-# ── Node-creation event ───────────────────────────────────────────────────────
+        # Bring the viewer pane to the front and set its network context.
+        try:
+            viewer.pane().setIsCurrentTab()
+        except Exception:
+            pass
+        try:
+            viewer.setPwd(node.parent())
+        except Exception:
+            pass
 
-def _on_node_created(event_type, **kwargs):
-    node = kwargs.get("node")
-    if node is None:
-        return
-    try:
-        if node.type().name() in _SANDDIAL_TYPE_NAMES:
-            _install_node_callback(node)
-            print(f"Sanddial: installed callback on '{node.path()}'")
+        # Make the Sanddial node current so the viewer state can find it.
+        node.setSelected(True, clear_all_selected=True)
+        node.setCurrent(True, True)
+
+        if mode == 1:
+            viewer.setCurrentState(_PAINT_STATE)
+        elif mode == 2:
+            viewer.setCurrentState(_ENV_STATE)
+        else:
+            viewer.setCurrentState("select")
+
     except Exception as exc:
-        print("Sanddial _on_node_created error:", exc)
+        print("Sanddial _enter_state_from_button error:", exc)
+        import traceback
+        traceback.print_exc()
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────
 
 def _startup():
-    # 1. Register the environment edit viewer state.
+    # Register viewer states.
     _load_env_state_from_hda()
-
-    # 2. Register the erodibility paint viewer state (standalone, not from HDA).
-    try:
-        paint_path = os.path.join(_SCRIPTS_DIR, "sanddial_paint_state.py")
-        if os.path.exists(paint_path):
-            with open(paint_path, "r", encoding="utf-8") as fh:
-                paint_src = fh.read()
-            import types as _t
-            mod = _t.ModuleType('sanddial_paint_state')
-            exec(compile(paint_src, paint_path, 'exec'), mod.__dict__)
-            sys.modules['sanddial_paint_state'] = mod
-            # register() is called automatically on import
-            print("Sanddial startup: loaded paint state")
-    except Exception as e:
-        print("Sanddial startup: failed to load paint state:", e)
-
-    # 3. Wire up the node-creation hook.
-    hou.hipFile.addEventCallback(_on_scene_load)
-    hou.node("/").addEventCallback(
-        (hou.nodeEventType.ChildCreated,),
-        _on_node_created,
-    )
-
-    # 4. Handle nodes already present in the scene (e.g. on session restore).
-    _install_callbacks_on_all_nodes()
+    _register_state_from_file(
+        "sanddial_paint_state.py", "sanddial_paint_state", _PAINT_STATE)
 
     print("Sanddial startup: complete")
 
 
-def _on_scene_load(event_type, **kwargs):
-    """Re-wire callbacks whenever a new .hip file is loaded."""
-    if event_type in (hou.hipFileEventType.AfterLoad,
-                      hou.hipFileEventType.AfterMerge):
-        _install_callbacks_on_all_nodes()
-
-
-# Run immediately when Houdini imports this module.
 _startup()
