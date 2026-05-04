@@ -190,36 +190,70 @@ class State(object):
 
             if geo is not None and geo.intrinsicValue("pointcount") > 0:
                 bbox = geo.boundingBox()
-                center = bbox.center()
+                bbox_center = bbox.center()
+                bbox_diag = bbox.sizevec().length()
 
-                # Get the view-to-scene forward vector from the current viewport.
-                # viewTransform() row 2 is the camera's local +Z, which points
-                # FROM the scene TOWARD the camera.  Negate it to get the
-                # into-scene forward direction used as the plane normal.
-                vp = self.scene_viewer.curViewport()
-                if vp:
-                    view_xform = vp.viewTransform()
-                    # Row 2 = camera +Z (toward camera); negate for into-scene normal
-                    plane_normal = hou.Vector3(
-                        -view_xform.at(2, 0),
-                        -view_xform.at(2, 1),
-                        -view_xform.at(2, 2),
-                    ).normalized()
+                ray_origin_v = hou.Vector3(ray_origin[0], ray_origin[1], ray_origin[2])
+                ray_dir_v = hou.Vector3(ray_dir[0], ray_dir[1], ray_dir[2]).normalized()
+
+                # Inter-particle spacing controls hit tolerance and walk step.
+                # voxel_size on the node mirrors the simulation grid spacing,
+                # which is also the natural particle spacing.
+                voxel = 0.2
+                if node:
+                    try:
+                        voxel = float(node.evalParm("voxel_size"))
+                    except Exception:
+                        pass
+                tol  = max(voxel * 1.5, 0.01)
+                step = max(voxel * 0.5, 0.005)
+
+                # Restrict the walk to the segment of the ray that overlaps
+                # the geometry's bounding sphere (cheap superset of the bbox).
+                to_center = bbox_center - ray_origin_v
+                t_center  = to_center.dot(ray_dir_v)
+                t_min = max(0.0, t_center - bbox_diag)
+                t_max = t_center + bbox_diag
+
+                # March along the ray; the first sample whose nearest particle
+                # is within `tol` is treated as the surface hit.  Houdini's
+                # nearestPoint() is KD-tree backed so this is cheap.
+                hit_pos = None
+                t = t_min
+                while t <= t_max:
+                    sample = ray_origin_v + ray_dir_v * t
+                    nearest_pt = geo.nearestPoint(sample)
+                    if nearest_pt is not None:
+                        np_pos = nearest_pt.position()
+                        if (np_pos - sample).length() < tol:
+                            hit_pos = np_pos
+                            break
+                    t += step
+
+                if hit_pos is not None:
+                    self._brush_pos = hit_pos
+                    hit = True
                 else:
-                    plane_normal = hou.Vector3(0, 0, -1)
+                    # Off-surface hover: fall back to a view-aligned plane
+                    # through the bbox center so the brush ring still
+                    # tracks the cursor.  Painting is gated on `hit`, so
+                    # nothing gets painted while the brush is in empty space.
+                    vp = self.scene_viewer.curViewport()
+                    if vp:
+                        view_xform = vp.viewTransform()
+                        plane_normal = hou.Vector3(
+                            -view_xform.at(2, 0),
+                            -view_xform.at(2, 1),
+                            -view_xform.at(2, 2),
+                        ).normalized()
+                    else:
+                        plane_normal = hou.Vector3(0, 0, -1)
 
-                # Intersect ray with a view-aligned plane through the geo center.
-                # t = dot(plane_normal, center - ray_origin) / dot(plane_normal, ray_dir)
-                denom = plane_normal.dot(ray_dir)
-                if abs(denom) > 1e-8:
-                    t = plane_normal.dot(center - ray_origin) / denom
-                    if t > 0:
-                        self._brush_pos = hou.Vector3(
-                            ray_origin[0] + ray_dir[0] * t,
-                            ray_origin[1] + ray_dir[1] * t,
-                            ray_origin[2] + ray_dir[2] * t,
-                        )
-                        hit = True
+                    denom = plane_normal.dot(ray_dir_v)
+                    if abs(denom) > 1e-8:
+                        t_plane = plane_normal.dot(bbox_center - ray_origin_v) / denom
+                        if t_plane > 0:
+                            self._brush_pos = ray_origin_v + ray_dir_v * t_plane
 
             # Update drawable transform
             radius = 0.5
@@ -239,11 +273,9 @@ class State(object):
                 self.scene_viewer.beginStateUndo("Paint Erodibility")
 
             if self._is_painting and hit and node and geo:
-                # When painting, snap to nearest point for accurate stroke
-                nearest_pt = geo.nearestPoint(self._brush_pos)
-                if nearest_pt is not None:
-                    paint_pos = nearest_pt.position()
-                    self._apply_brush(node, paint_pos)
+                # _brush_pos is already a particle position from the
+                # ray-surface intersection above.
+                self._apply_brush(node, self._brush_pos)
 
             if not is_lmb and self._is_painting:
                 self._is_painting = False
