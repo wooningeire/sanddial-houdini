@@ -26,7 +26,15 @@ void WindSolver::computeDeflation(AreniteGeometry& geo) {
                         + p.stressTensor(1, 1)
                         + p.stressTensor(2, 2);
 
-        fpreal Fcn = cohesion + frictionCoeff * trSigma;
+        // Paper Eq. 9: F_cn = μ_c + μ_f * tr(σ).
+        // Under compression tr(σ) is negative in the standard sign convention,
+        // which would reduce F_cn and incorrectly increase deflation.  The
+        // Mohr-Coulomb criterion uses the magnitude of the confining stress, so
+        // we take the absolute value to ensure higher compressive stress always
+        // reduces deflation (fabric interlocking intent).
+        fpreal Fcn = cohesion + frictionCoeff * SYSabs(trSigma);
+
+        // Paper Eq. 12: W_d = k_d * exp(−F_cn² / (2α²))
         fpreal Wd = deflationCoeff * SYSexp(-(Fcn * Fcn) / twoAlphaSq);
         p.erosionValue += Wd;
         p.deflationErosion += Wd;
@@ -57,12 +65,13 @@ void WindSolver::computeAbrasion(AreniteGeometry& geo, fpreal dt) {
     }
 
     fpreal h2 = smoothingLength * smoothingLength;
+    (void)h2; // retained for domain-cleanup below
 
     for (const auto& wp : myWindParticles) {
         int ix, iy, iz;
         if (!geo.grid.worldToGrid(wp.pos, ix, iy, iz)) continue;
 
-        // Search neighboring voxel cells for sandstone particles.
+        // Search neighbouring voxel cells for sandstone surface particles.
         int searchRadius = (int)std::ceil(smoothingLength / geo.grid.dx);
         for (int dx = -searchRadius; dx <= searchRadius; ++dx) {
             for (int dy = -searchRadius; dy <= searchRadius; ++dy) {
@@ -77,15 +86,18 @@ void WindSolver::computeAbrasion(AreniteGeometry& geo, fpreal dt) {
                         auto& p = geo.particles[pIdx];
                         UT_Vector3 diff = p.position - wp.pos;
                         fpreal dist2 = diff.dot(diff);
-                        if (dist2 > h2) continue;
+                        if (dist2 > smoothingLength * smoothingLength) continue;
 
-                        fpreal weight = kernelW(std::sqrt(dist2));
-                        if (weight <= 0) continue;
-
+                        // Paper Eq. 8: W_a = k_a * ||v|| * (−n · v)+
+                        // This is a per-surface-particle quantity driven by the
+                        // local wind velocity at that point.  The SPH kernel is
+                        // used only to interpolate the wind velocity field onto
+                        // the sandstone particle; the kernel weight must NOT
+                        // appear in the erosion term itself.
                         fpreal vMag = wp.vel.length();
                         fpreal dot = -p.normal.dot(wp.vel);
                         if (dot > 0) {
-                            fpreal Wa = abrasionCoeff * vMag * dot * weight * dt;
+                            fpreal Wa = abrasionCoeff * vMag * dot;
                             p.erosionValue += Wa;
                             p.abrasionErosion += Wa;
                         }

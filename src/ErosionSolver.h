@@ -14,13 +14,16 @@ public:
 
     // ── Parameters ──────────────────────────────────────────────────────────
     /// Erodibility of "weak" material (low stress).
-    fpreal weakErodibility = 1.0;
+    /// Paper Table 2: k_w = 1e-4 year^-1.
+    fpreal weakErodibility = 1.0e-4;
 
     /// Erodibility of "strong" material (high stress / fabric interlocking).
-    fpreal strongErodibility = 0.2;
+    /// Paper Table 2: k_s = 1e-6 year^-1.  k_w >> k_s (ratio ~100x).
+    fpreal strongErodibility = 1.0e-6;
 
-    /// Stress threshold that separates weak from strong material.
-    fpreal stressThreshold = 1.0e3;
+    /// Stress threshold I that separates weak from strong material (Pa).
+    /// Paper Eq. 2 / Table 1: 1.5–6 MPa depending on the structure.
+    fpreal stressThreshold = 1.5e6;
 
     /// Apply combined erosion to particle viabilities.
     void solve(AreniteGeometry& geo, fpreal dt);

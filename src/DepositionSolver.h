@@ -3,49 +3,58 @@
 #include "AreniteGeometry.h"
 #include <vector>
 
+/// Per-cell data used by the deposition algorithm.
 struct DepCell {
-    int surfaceCount = 0;
-    UT_Vector3 sumNormal{0, 0, 0};
-    fpreal sumY = 0.0;
-    
-    fpreal proxyElevation = 0.0;
-    fpreal averageSlope = 0.0;
-    
-    bool isStable = false;
-    int receiverIdx = -1;
-    int pIdx = -1;
+    // Set during identifySurfaceCells:
+    bool   isSurface      = false;
+    fpreal proxyElevation = 0.0f;  ///< Average Y of surface particles in cell.
+    fpreal averageSlope   = 0.0f;  ///< Angle between avg normal and up (radians).
+    bool   isStable       = false; ///< slope < stableSlopeThreshold.
+
+    // Set during assignReceivers:
+    int    receiverIdx    = -1;    ///< Index of the receiver cell (-1 = none).
+
+    // Set during buildDepositionPointers:
+    int    pIdx           = -1;    ///< Final deposition target after pointer-jumping.
+
+    // Updated during depositParticles:
+    fpreal depositTop     = 0.0f;  ///< Current top of the deposit pile in this cell.
+    int    depositCount   = 0;     ///< Number of particles deposited here this step.
 };
 
-/// Routes eroded particles toward stable cells and deposits them.
+/// Implements paper §7: gravitational deposition of eroded particles.
 ///
-/// "Stable" cells are those whose average surface slope is below a threshold.
-/// A graph connecting each cell to a reachable stable cell is built, and
-/// eroded particles are transported along it to their deposition site.
+/// Algorithm (verbatim from paper):
+///   1. Identify stable surface cells (slope < angle of repose).
+///   2. For each surface cell c, assign a receiver: the next cell a particle
+///      would flow to (paper Fig. 4 three-case rule from §6.2).
+///   3. Set p(c) = receiver(c).  Apply pointer jumping p(c) = p(p(c)) for
+///      log2(n_surface) iterations to find the nearest downward stable cell.
+///   4. Each eroded particle looks up the surface cell it came from, reads
+///      p(c), and is placed at a random 2D position within that stable cell
+///      at the cell's proxy elevation z (which increments per deposited
+///      particle to maintain target density).
+///   5. The grid is shifted by a random per-step offset to avoid staircase
+///      artifacts (paper §7 last paragraph).
 class DepositionSolver {
 public:
     DepositionSolver() = default;
     ~DepositionSolver() = default;
 
-    // ── Parameters ──────────────────────────────────────────────────────────
-    /// Maximum slope (in radians) below which a cell is considered stable.
-    fpreal stableSlopeThreshold = 0.5;
+    /// Maximum slope (radians) below which a cell is considered stable.
+    /// Paper calls this the "angle of repose" / talus slope.
+    fpreal stableSlopeThreshold = 0.5f;
 
-    /// Initial viability assigned to deposited sediment.
-    fpreal sedimentViability = 0.05;
+    /// Viability assigned to freshly deposited sediment particles.
+    fpreal sedimentViability = 0.05f;
 
-    /// Process all eroded particles: route them to stable cells and deposit.
     void solve(AreniteGeometry& geo, fpreal dt, int frame);
 
 private:
-    /// Identify which grid cells are "stable" based on average slope.
-    void identifyStableCells(const AreniteGeometry& geo, const UT_Vector3& offset);
+    void identifySurfaceCells(const AreniteGeometry& geo, const UT_Vector3& gridOffset);
+    void assignReceivers      (const AreniteGeometry& geo);
+    void buildDepositionPointers();
+    void depositParticles     (AreniteGeometry& geo, int frame, const UT_Vector3& gridOffset);
 
-    /// Build a routing graph from each cell to the nearest reachable stable
-    /// cell.
-    void buildRoutingGraph(const AreniteGeometry& geo);
-
-    /// Move each eroded particle along the routing graph and deposit it.
-    void depositParticles(AreniteGeometry& geo, int frame, const UT_Vector3& offset);
-
-    std::vector<DepCell> m_cellData;
+    std::vector<DepCell> m_cells;
 };

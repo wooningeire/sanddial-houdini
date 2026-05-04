@@ -79,11 +79,15 @@ void AreniteGeometry::initFromHoudiniGeo(const GU_Detail* geo) {
         AreniteParticle& p = particles[idx];
         p = AreniteParticle();
         p.position  = geo->getPos3(ptoff);
-        
+
         if (erodH.isValid()) p.erodibility = erodH.get(ptoff);
         if (velH.isValid())  p.velocity    = velH.get(ptoff);
         if (viabH.isValid()) p.viability   = viabH.get(ptoff);
         if (sedH.isValid())  p.isSediment  = (sedH.get(ptoff) != 0);
+
+        // Reconstruct isEroded from viability: a particle is in-flight
+        // (eroded) when its viability has been driven to zero.
+        p.isEroded = (p.viability <= 0.0);
 
         if (defGradH.isValid() && defGradH.getTupleSize() == 9) {
             for (int i = 0; i < 3; ++i)
@@ -179,8 +183,14 @@ void AreniteGeometry::writeToHoudiniGeo(GU_Detail* geo) const {
     GA_RWHandleF  apicCH(geo->addFloatTuple(GA_ATTRIB_POINT, "apicC", 9));
 
     for (const auto& p : particles) {
-        if (p.isEroded)
-            continue;
+        // Write all non-eroded particles, plus eroded ones that are in-flight
+        // (isEroded but not yet deposited).  Skipping eroded particles causes
+        // them to vanish from the output and reappear at their original
+        // position when deposited, which looks like teleportation.
+        // We distinguish "truly gone" (should never happen in our model — we
+        // reuse particles) from "in-flight eroded" by always writing them.
+        // The isSediment and viability attributes let downstream code tell
+        // them apart.
 
         GA_Offset pt = geo->appendPoint();
         geo->setPos3(pt, p.position);
