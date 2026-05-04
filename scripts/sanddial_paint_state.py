@@ -272,15 +272,25 @@ class State(object):
                     nearest_pt = geo.nearestPoint(sample)
                     if nearest_pt is None:
                         break
-                    d = (nearest_pt.position() - sample).length()
+                    np_pos = nearest_pt.position()
+                    d = (np_pos - sample).length()
                     if d < tol:
-                        # Use the ray sample (not the snapped particle) so a
-                        # drag produces a smooth, continuous stroke instead
-                        # of jumping discretely from particle to particle.
-                        # The C++ brush still applies a radial falloff in
-                        # world space, so painting around `sample` affects
-                        # the cluster of particles the user is hovering over.
-                        hit_pos = sample
+                        # `sample` is up to `tol` *in front of* the surface
+                        # along the ray.  The C++ brush is a 3D sphere; an
+                        # offset of T between its centre and the surface
+                        # shrinks the lateral disc on the surface from R
+                        # to sqrt(R²-T²), which makes the painted footprint
+                        # noticeably smaller than the on-screen brush ring.
+                        # Project the nearest particle onto the ray and use
+                        # that depth as the brush centre instead -- still on
+                        # the ray (so drag stays smooth and continuous), but
+                        # now at the actual surface depth so the sphere cuts
+                        # a full-radius disc on the surface.
+                        t_surface = (np_pos - ray_origin_v).dot(ray_dir_v)
+                        if t_surface > 0:
+                            hit_pos = ray_origin_v + ray_dir_v * t_surface
+                        else:
+                            hit_pos = sample
                         break
                     t += max(d - tol, min_step)
 

@@ -668,8 +668,21 @@ void SOP_Sanddial::applyBrushStroke(fpreal t, int frame) {
         }
     }
 
-    // Apply stroke directly to myGeo
-    fpreal r2 = radius * radius;
+    // Apply stroke directly to myGeo.
+    //
+    // Falloff curve:
+    //     alpha = (1 - (dist/radius)^2) ^ (1 / falloff)
+    //
+    // This keeps alpha = 1 at the centre and 0 at the rim while letting
+    // `falloff` control the size of the "plateau" of full-strength paint:
+    //     falloff = 1   → quadratic cone   (alpha ~0.75 at half-radius)
+    //     falloff = 2   → half-circle      (alpha ~0.87 at half-radius)
+    //     falloff = 4   → near-uniform     (alpha ~0.93 at half-radius)
+    // The previous formula `1 - (dist/radius)^falloff` had no plateau and
+    // dropped almost from the centre, which made the visible footprint of
+    // the brush feel much smaller than the on-screen brush ring.
+    fpreal r2     = radius * radius;
+    fpreal invFOf = fpreal(1.0) / falloff;
     for (auto& p : myGeo.particles) {
         if (p.isEroded) continue;
         if (surfaceOnly && !p.isSurface) continue;
@@ -679,7 +692,8 @@ void SOP_Sanddial::applyBrushStroke(fpreal t, int frame) {
         if (d2 >= r2) continue;
 
         fpreal dist  = SYSsqrt(d2);
-        fpreal alpha = fpreal(1.0) - SYSpow(dist / radius, falloff);
+        fpreal base  = SYSmax(fpreal(1.0) - d2 / r2, fpreal(0.0));
+        fpreal alpha = SYSpow(base, invFOf);
 
         // Depth-based filtering and attenuation
         if (depthEnabled) {
