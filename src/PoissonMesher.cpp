@@ -7,47 +7,119 @@
 #include <GU/GU_Detail.h>
 #include <GA/GA_Handle.h>
 #include <GU/GU_PrimPoly.h>
+#include <SYS/SYS_Math.h>
+#include <cmath>
 #include <vector>
+
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
 
 using namespace PoissonRecon;
 
 // ── Input stream: feeds Sanddial particles as oriented samples ──────────────
+//
+// For sediment-only meshing the stream "splats" each particle as a small
+// ring of oriented samples in the tangent plane to its normal.  A bare
+// sediment particle is just one oriented sample, which screened Poisson
+// cannot reconstruct cleanly: isolated halo particles either disappear
+// below the iso-value or shatter into per-sample fragments.  Splatting
+// gives every particle a few-voxel disk of consistent samples, so the
+// reconstructor sees a locally dense cloud and produces one connected
+// surface patch per particle that fuses with its neighbors.
+//
+// Splats are arranged at fixed angles for determinism (no RNG), and all
+// share the parent particle's normal so they reinforce -- rather than
+// noise up -- the indicator gradient.
 struct ArenitePointStream
     : public Reconstructor::InputOrientedSampleStream<float, 3>
 {
     const AreniteGeometry& geo;
     MeshFilter filter;
     exint idx;
+    int splatIdx;             ///< Current splat sample within the active particle.
+    int splatsPerParticle;    ///< 1 = no splatting; otherwise 1 center + (N-1) ring.
+    float splatRadius;        ///< Ring radius in world units.
 
     ArenitePointStream(const AreniteGeometry& g, MeshFilter f)
-        : geo(g), filter(f), idx(0) {}
+        : geo(g), filter(f), idx(0), splatIdx(0)
+        , splatsPerParticle(1), splatRadius(0.0f)
+    {
+        if (filter == MeshFilter::SedimentOnly) {
+            splatsPerParticle = 9; // 1 center + 8 ring samples
+            // Ring radius ~1.5 voxels: each particle becomes a ~3-voxel
+            // diameter disk, large enough to fuse with adjacent halo
+            // particles without bloating dense pile geometry.
+            float dx = (float)geo.grid.dx;
+            if (!(dx > 0)) dx = (float)geo.voxelSize;
+            if (!(dx > 0)) dx = 0.025f;
+            splatRadius = 1.5f * dx;
+        }
+    }
 
-    void reset() override { idx = 0; }
+    void reset() override { idx = 0; splatIdx = 0; }
+
+    /// Whether @p part should contribute samples for the current filter.
+    bool accepts(const AreniteParticle& part) const {
+        if (part.isEroded) return false;
+        // Sediment-only meshing accepts *every* deposited particle (not
+        // just those flagged isSurface).  The SPH-density surface test
+        // mis-classifies sediment lying on top of dense sandstone --
+        // the underlying rock inflates the local density past the
+        // global "0.75 * maxDensity" cut-off, so genuine surface
+        // sediment gets dropped.  Including all sediment also gives
+        // Poisson a much denser input cloud.
+        const bool requireSurface = (filter != MeshFilter::SedimentOnly);
+        if (requireSurface && !part.isSurface) return false;
+        if (filter == MeshFilter::SandstoneOnly && part.isSediment) return false;
+        if (filter == MeshFilter::SedimentOnly && !part.isSediment) return false;
+        return true;
+    }
 
     bool read(Point<float, 3>& p, Point<float, 3>& n) override {
         while (idx < geo.particles.entries()) {
             const auto& part = geo.particles(idx);
-            ++idx;
-            if (part.isEroded) continue;
-            // For sediment-only meshing, accept *every* deposited
-            // particle (not just those flagged isSurface).  The SPH-
-            // density surface test mis-classifies sediment lying on top
-            // of dense sandstone -- the underlying rock inflates the
-            // local density past the global "0.75 * maxDensity" cut-off,
-            // so genuine surface sediment gets dropped.  Including all
-            // sediment also gives Poisson a much denser input cloud,
-            // which is what bridges the gaps in scattered deposits.
-            const bool requireSurface = (filter != MeshFilter::SedimentOnly);
-            if (requireSurface && !part.isSurface) continue;
-            if (filter == MeshFilter::SandstoneOnly && part.isSediment) continue;
-            if (filter == MeshFilter::SedimentOnly && !part.isSediment) continue;
+            if (!accepts(part)) {
+                ++idx;
+                splatIdx = 0;
+                continue;
+            }
 
-            p[0] = (float)part.position.x();
-            p[1] = (float)part.position.y();
-            p[2] = (float)part.position.z();
-            n[0] = (float)part.normal.x();
-            n[1] = (float)part.normal.y();
-            n[2] = (float)part.normal.z();
+            UT_Vector3 normal = part.normal;
+            fpreal nlen = normal.length();
+            if (nlen < 1e-8) normal = UT_Vector3(0, 1, 0);
+            else             normal /= nlen;
+
+            UT_Vector3 pos = part.position;
+
+            // splatIdx == 0 emits the particle itself; splatIdx > 0
+            // emits one of the ring samples.
+            if (splatsPerParticle > 1 && splatIdx > 0) {
+                UT_Vector3 anchor = (SYSabs(normal.x()) > 0.9)
+                                  ? UT_Vector3(0, 1, 0)
+                                  : UT_Vector3(1, 0, 0);
+                UT_Vector3 t1 = cross(normal, anchor);
+                t1.normalize();
+                UT_Vector3 t2 = cross(normal, t1);
+
+                int ring = splatIdx - 1;
+                int ringCount = splatsPerParticle - 1;
+                fpreal ang = (2.0 * M_PI) * (fpreal)ring / (fpreal)ringCount;
+                pos += (SYScos(ang) * t1 + SYSsin(ang) * t2) * splatRadius;
+            }
+
+            p[0] = (float)pos.x();
+            p[1] = (float)pos.y();
+            p[2] = (float)pos.z();
+            n[0] = (float)normal.x();
+            n[1] = (float)normal.y();
+            n[2] = (float)normal.z();
+
+            ++splatIdx;
+            if (splatIdx >= splatsPerParticle) {
+                ++idx;
+                splatIdx = 0;
+            }
             return true;
         }
         return false;
@@ -128,17 +200,28 @@ void PoissonMesher::reconstruct(const AreniteGeometry& geo,
 
     // Adaptive params for sparse input (e.g. scattered sediment).
     //
-    // PoissonRecon's defaults (samplesPerNode = 1.5, kernelDepth =
-    // depth - 2) are tuned for laser-scan-style dense oriented samples.
-    // Sediment particles are typically ~1 per voxel and form a thin,
-    // patchy layer, which gives a noisy density estimate and a level
-    // set that fragments into disconnected blobs (the visual symptom
-    // the user reported).  For sediment, widen the density-estimation
-    // kernel by lowering kernelDepth and require more samples per node
-    // so the reconstructor smooths over inter-particle gaps.
+    // The ArenitePointStream constructor splats every sediment particle
+    // into 9 oriented samples (1 center + 8 ring), so the cloud handed
+    // to PoissonRecon is locally dense around each particle.  That
+    // makes screened-Poisson defaults usable here without the surface
+    // shattering into per-particle islands.  Two small biases remain:
+    //
+    //   * samplesPerNode = 3.0 (vs. default 1.5): mild noise smoothing
+    //     so the splatted disk for one particle fuses with its
+    //     neighbors instead of producing a faceted ring.
+    //   * kernelDepth = depth - 3 (vs. default depth - 2): the density
+    //     estimation kernel widens enough to bridge halo gaps that are
+    //     larger than the splat-disk radius, keeping the reconstructed
+    //     surface a single connected manifold rather than a collection
+    //     of disconnected disks.
+    //
+    // pointWeight is left at the default (~2.0); a higher value makes
+    // the iso-surface track every individual sample and re-fragments
+    // the halo, which is exactly the failure mode we are trying to
+    // avoid.
     if (filter == MeshFilter::SedimentOnly) {
-        solverParams.samplesPerNode = 5.0f;
-        const int wideKernel = (int)depth - 4;
+        solverParams.samplesPerNode = 3.0f;
+        const int wideKernel = (int)depth - 3;
         solverParams.kernelDepth = (unsigned int)(wideKernel < 0 ? 0 : wideKernel);
     }
 
@@ -167,26 +250,74 @@ void PoissonMesher::reconstruct(const AreniteGeometry& geo,
     implicit->extractLevelSet(vStream, fStream, extractionParams);
     delete implicit;
 
+    // ── Clip the reconstructed mesh to the ground plane ─────────────────
+    //
+    // Screened Poisson always closes the implicit surface, even where the
+    // input cloud has no samples.  Sediment particles all carry upward
+    // normals, so the field has nothing to anchor it underneath the
+    // cloud and the reconstructor extrapolates a large closure lobe
+    // dangling below the ground.
+    //
+    // The clip rule is "keep a face iff all of its vertices are at or
+    // above the ground plane".  This preserves the manifold property
+    // produced by `forceManifold = true`: every edge of a kept face
+    // has both vertices above the ground, so any face that originally
+    // shared that edge is also kept (its two endpoints on the edge are
+    // above ground, and a triangle has only three vertices).  A
+    // centroid- or any-vertex-based rule could split adjacent faces
+    // and introduce non-manifold seams along the cut.
+    if (geo.useGroundPlane) {
+        const float groundY = (float)geo.groundY;
+        const float clipEps = 1e-4f;
+        const size_t numVerts = vCoords.size() / 3;
+
+        std::vector<std::vector<int>> kept;
+        kept.reserve(polygons.size());
+        for (const auto& face : polygons) {
+            if (face.empty()) continue;
+            bool allAbove = true;
+            for (int vi : face) {
+                if (vi < 0 || (size_t)vi >= numVerts ||
+                    vCoords[3 * vi + 1] < groundY - clipEps) {
+                    allAbove = false;
+                    break;
+                }
+            }
+            if (allAbove) kept.push_back(face);
+        }
+        polygons.swap(kept);
+    }
+
     // ── Write into GU_Detail ────────────────────────────────────────────
     outputGeo->clearAndDestroy();
 
     size_t numVerts = vCoords.size() / 3;
-    if (numVerts == 0) return;
+    if (numVerts == 0 || polygons.empty()) return;
 
-    // Create points
-    GA_Offset startPt = outputGeo->appendPointBlock(numVerts);
+    // Compact: only emit vertices that surviving polygons actually use,
+    // so ground-clipped orphans don't litter the output detail.
+    std::vector<int> remap(numVerts, -1);
+    int nextIdx = 0;
+    for (const auto& face : polygons)
+        for (int vi : face)
+            if (vi >= 0 && (size_t)vi < numVerts && remap[vi] < 0)
+                remap[vi] = nextIdx++;
+
+    if (nextIdx == 0) return;
+
+    GA_Offset startPt = outputGeo->appendPointBlock((GA_Size)nextIdx);
     GA_RWHandleV3 posH(outputGeo->getP());
     for (size_t i = 0; i < numVerts; ++i) {
-        GA_Offset pt = startPt + (GA_Offset)i;
+        if (remap[i] < 0) continue;
+        GA_Offset pt = startPt + (GA_Offset)remap[i];
         posH.set(pt, UT_Vector3(vCoords[3*i], vCoords[3*i+1], vCoords[3*i+2]));
     }
 
-    // Create polygons
     for (const auto& face : polygons) {
         GU_PrimPoly* prim = GU_PrimPoly::build(outputGeo, (int)face.size(),
                                                 GU_POLY_CLOSED, 0);
         for (size_t v = 0; v < face.size(); ++v) {
-            prim->setVertexPoint((int)v, startPt + (GA_Offset)face[v]);
+            prim->setVertexPoint((int)v, startPt + (GA_Offset)remap[face[v]]);
         }
     }
 }
