@@ -55,7 +55,6 @@ class State(object):
         self._brush_pos = hou.Vector3(0, 0, 0)
         self._brush_normal = hou.Vector3(0, 1, 0)
         self._is_painting = False
-        self._debug_logged = False
 
         # Monotonically-increasing stroke ID written to brush_stroke_id.
         # Each call ultimately produces a stroke even if mouse events arrive
@@ -71,7 +70,6 @@ class State(object):
                 break
         
         scene_viewer.setPromptMessage(self.MSG)
-        print("Sanddial Paint: __init__ complete, node =", self._node)
 
     # ── Lifecycle ────────────────────────────────────────────────────────
 
@@ -107,18 +105,6 @@ class State(object):
             except Exception:
                 pass
 
-            # Loud diagnostic: if the C++ HDA hasn't been rebuilt with the
-            # new trigger parm, drag painting will silently use the lossy
-            # toggle fallback.  Surface this so it isn't a mystery.
-            if self._node.parm("brush_stroke_id") is None:
-                print("Sanddial Paint WARNING: 'brush_stroke_id' parm is "
-                      "missing on the node.  This means the C++ HDA is "
-                      "from an older build.  Rebuild the project for "
-                      "reliable drag painting; otherwise the state will "
-                      "fall back to the brush_active toggle which loses "
-                      "strokes when mouse events outpace SOP cooks.")
-        print("Sanddial Paint: onEnter")
-
     def onExit(self, kwargs):
         try:
             self._brush_drawable.show(False)
@@ -130,7 +116,6 @@ class State(object):
                 node.parm("viewport_mode").set(0)
         except Exception:
             pass
-        print("Sanddial Paint: onExit")
 
     def onResume(self, kwargs):
         try:
@@ -158,14 +143,13 @@ class State(object):
                     "normals": 4,
                     "deflation": 5,
                     "abrasion": 6,
-                    "water": 7,
-                    "total": 8
+                    "total": 7,
                 }
                 mode = mode_map.get(mode_str, 0)
                 if self._node:
                     self._node.parm("visualize_mode").set(mode)
-            except Exception as e:
-                print("Sanddial Paint Menu error:", e)
+            except Exception:
+                pass
 
     # ── Drawing ──────────────────────────────────────────────────────────
 
@@ -173,8 +157,8 @@ class State(object):
         try:
             handle = kwargs["draw_handle"]
             self._brush_drawable.draw(handle)
-        except Exception as e:
-            print("Sanddial Paint onDraw error:", e)
+        except Exception:
+            pass
 
     # ── Keyboard ─────────────────────────────────────────────────────────
 
@@ -345,10 +329,7 @@ class State(object):
 
             return True
 
-        except Exception as e:
-            print("Sanddial Paint onMouseEvent error:", e)
-            import traceback
-            traceback.print_exc()
+        except Exception:
             return False
 
     # ── Scroll ───────────────────────────────────────────────────────────
@@ -376,8 +357,7 @@ class State(object):
 
             self._update_brush_xform(node.evalParm("brush_radius"))
             return True
-        except Exception as e:
-            print("Sanddial Paint onMouseWheelEvent error:", e)
+        except Exception:
             return False
 
     # ── Helpers ──────────────────────────────────────────────────────────
@@ -429,8 +409,7 @@ class State(object):
         Fallback for older C++ builds that don't expose brush_stroke_id:
         toggle the public `brush_active` 0/1 parm.  This still has the
         cancellation race (0->1->0 between cooks drops the stroke), but
-        is better than no trigger at all.  We log a one-time warning so
-        the user knows to rebuild for reliable drag painting.
+        is better than no trigger at all.
         """
         if not node:
             return
@@ -439,8 +418,7 @@ class State(object):
         # 1. Brush position is needed by either trigger path.
         try:
             node.parmTuple("brush_pos").set((pos[0], pos[1], pos[2]))
-        except Exception as e:
-            print("Sanddial Paint: brush_pos set failed:", e)
+        except Exception:
             return
 
         self._stroke_counter += 1
@@ -451,20 +429,15 @@ class State(object):
             try:
                 stroke_parm.set(self._stroke_counter)
                 return
-            except Exception as e:
-                print("Sanddial Paint: brush_stroke_id set failed:", e)
+            except Exception:
+                pass
 
         # 3. Fallback path: brush_active toggle (race-prone but functional).
-        if not getattr(self, "_warned_no_stroke_id", False):
-            print("Sanddial Paint WARNING: brush_stroke_id parm not found. "
-                  "Rebuild the C++ HDA for reliable drag painting; falling "
-                  "back to brush_active toggle (some strokes may be lost).")
-            self._warned_no_stroke_id = True
         try:
             cur = int(node.evalParm("brush_active") or 0)
             node.parm("brush_active").set(0 if cur else 1)
-        except Exception as e:
-            print("Sanddial Paint: brush_active toggle failed:", e)
+        except Exception:
+            pass
 
 
 def createViewerStateTemplate():
@@ -486,7 +459,6 @@ def createViewerStateTemplate():
     menu.addSeparator()
     menu.addActionItem("visualize_deflation", "Wind Deflation")
     menu.addActionItem("visualize_abrasion", "Wind Abrasion")
-    # menu.addActionItem("visualize_water", "Water")
     menu.addActionItem("visualize_total", "Total Erosion")
     template.bindMenu(menu)
     
@@ -501,7 +473,6 @@ def register():
         pass
     tpl = createViewerStateTemplate()
     hou.ui.registerViewerState(tpl)
-    print(f"Sanddial: Registered viewer state '{STATE_NAME}'")
 
 
 def enter(viewer=None):
@@ -513,7 +484,6 @@ def enter(viewer=None):
         viewer = hou.ui.paneTabOfType(hou.paneTabType.SceneViewer)
     if viewer:
         viewer.setCurrentState(STATE_NAME)
-        print(f"Sanddial: Entered state '{STATE_NAME}'")
 
 
 # Auto-register when this module is loaded

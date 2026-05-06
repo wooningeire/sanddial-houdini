@@ -21,12 +21,10 @@ sys.modules["sanddial_paint_state"] = mod
 
 try:
     hou.ui.unregisterViewerState(_STATE_NAME)
-    print(f"Unregistered old state '{_STATE_NAME}'")
 except Exception:
     pass
 
 hou.ui.registerViewerState(mod.createViewerStateTemplate())
-print(f"Registered updated state '{_STATE_NAME}'")
 
 # ── Re-enter if viewer is currently in the paint state ───────────────────────
 try:
@@ -41,8 +39,5 @@ try:
                 viewer.setPwd(node.parent())
                 break
         viewer.setCurrentState(_STATE_NAME)
-        print("Re-entered paint state.")
-except Exception as e:
-    print(f"Note: could not auto-re-enter state ({e})")
-
-print("Done.")
+except Exception:
+    pass

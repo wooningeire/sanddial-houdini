@@ -13,7 +13,7 @@ class State(object):
         self.state_name = state_name
         self.scene_viewer = scene_viewer
         self._node = None
-        
+
         # Find the sanddial node
         for n in hou.node('/').allSubChildren():
             if n.parm('viewport_mode') is not None:
@@ -22,7 +22,6 @@ class State(object):
 
     def onEnter(self, kwargs):
         self._node = kwargs.get("node", None) or self._node
-        print("Sanddial View: onEnter")
 
     def onMenuAction(self, kwargs):
         """Handle menu item selection."""
@@ -38,24 +37,23 @@ class State(object):
                     "normals": 4,
                     "deflation": 5,
                     "abrasion": 6,
-                    "water": 7,
-                    "total": 8
+                    "total": 7,
                 }
                 mode = mode_map.get(mode_str, 0)
                 if self._node:
                     self._node.parm("visualize_mode").set(mode)
-            except Exception as e:
-                print("Sanddial View Menu error:", e)
+            except Exception:
+                pass
 
 def createViewerStateTemplate():
     template = hou.ViewerStateTemplate(
         STATE_NAME, "Sanddial View", hou.sopNodeTypeCategory()
     )
     template.bindFactory(State)
-    
+
     # Create the menu
     menu = hou.ViewerStateMenu("sanddial_view_menu", "Visualization")
-    
+
     # Add options
     menu.addActionItem("visualize_nothing", "Nothing")
     menu.addSeparator()
@@ -66,9 +64,8 @@ def createViewerStateTemplate():
     menu.addSeparator()
     menu.addActionItem("visualize_deflation", "Wind Deflation")
     menu.addActionItem("visualize_abrasion", "Wind Abrasion")
-    menu.addActionItem("visualize_water", "Water")
     menu.addActionItem("visualize_total", "Total Erosion")
-    
+
     template.bindMenu(menu)
     return template
 
@@ -79,7 +76,6 @@ def register():
         pass
     tpl = createViewerStateTemplate()
     hou.ui.registerViewerState(tpl)
-    print(f"Sanddial: Registered viewer state '{STATE_NAME}'")
 
 if __name__ == "__main__":
     register()

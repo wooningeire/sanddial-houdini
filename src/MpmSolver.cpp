@@ -2,10 +2,6 @@
 #include <SYS/SYS_Math.h>
 #include <UT/UT_Matrix3.h>
 
-// Define this to make particles dynamic (gravity, boundary, advection)
-// for debugging MPM behavior. Undefine for normal Arenite (static sandstone).
-// #define SANDDIAL_MPM_DEBUG_DYNAMIC
-
 // ── Helper: outer product of two UT_Vector3 → UT_Matrix3 ──────────────────
 static UT_Matrix3 outerProduct(const UT_Vector3& a, const UT_Vector3& b) {
     // UT_Matrix3 is row-major:  M(row, col)
@@ -39,14 +35,8 @@ static void polarDecomp(const UT_Matrix3& F, UT_Matrix3& R, UT_Matrix3& S) {
             for (int j = 0; j < 3; ++j)
                 R(i, j) = 0.5 * (R(i, j) + RtInv(i, j));
     }
-    // S = R^T * F
     UT_Matrix3 Rt = R;
     Rt.transpose();
-    S = Rt;
-    S *= F;  // This does S = Rt * F ... but UT_Matrix3 *= is right-multiply
-    // Actually: S = R^T * F.  With UT_Matrix3, operator*= does this *= rhs,
-    // i.e. S = S * F.  Since S was set to R^T, S = R^T * F.  But UT_Matrix3
-    // row-vector convention means M *= N  =>  M = M * N.  Let me be explicit:
     S.zero();
     for (int i = 0; i < 3; ++i)
         for (int j = 0; j < 3; ++j)
@@ -215,30 +205,6 @@ void MpmSolver::updateGrid(AreniteGeometry& geo, fpreal dt) {
         VoxelCell& c = g.cells[idx];
         if (c.mass > 0) {
             c.velocity = c.momentum / c.mass;
-
-#ifdef SANDDIAL_MPM_DEBUG_DYNAMIC
-            // Apply gravity
-            c.velocity.y() += dt * (-1.0);
-
-            // Recover (ix, iy, iz) from flat index for boundary check
-            int ix = (int)(idx % g.res[0]);
-            int iy = (int)((idx / g.res[0]) % g.res[1]);
-            int iz = (int)(idx / ((exint)g.res[0] * g.res[1]));
-
-            // Boundary thickness in cells
-            int bnd = SYSmax(2, g.res[0] / 20);
-
-            // Sticky walls (left, right, top, front, back)
-            if (ix < bnd || ix >= g.res[0] - bnd ||
-                iy >= g.res[1] - bnd ||
-                iz < bnd || iz >= g.res[2] - bnd) {
-                c.velocity = UT_Vector3(0, 0, 0);
-            }
-            // Separating floor
-            if (iy < bnd) {
-                c.velocity.y() = SYSmax((fpreal)0.0, c.velocity.y());
-            }
-#endif
         }
     }
 }
@@ -310,12 +276,6 @@ void MpmSolver::transferToParticles(AreniteGeometry& geo, fpreal dt,
                     newF(i, j) += update(i, k) * p.deformationGrad(k, j);
 
         p.deformationGrad = newF;
-
-#ifdef SANDDIAL_MPM_DEBUG_DYNAMIC
-        // Debug: advect particles so we can see MPM dynamics
-        p.position += p.velocity * dt;
-#endif
-        // In production (no debug flag), particles are static;
-        // only eroded particles move via DepositionSolver.
+        // Sandstone particles stay fixed; eroded particles move in DepositionSolver.
     }
 }

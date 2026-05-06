@@ -15,15 +15,12 @@
 #include <PY/PY_Python.h>
 
 // ── Viewport Mode ──────────────────────────────────────────────────────────
-// viewport_mode is kept as PRM_ORD with the original token choices so that
-// existing .hip files load without "Invalid channel" warnings.  It is now a
-// read-only indicator — state switching is done by the buttons below, not by
-// a parm-change callback.
+// viewport_mode is a read-only PRM_ORD indicator (view vs erodibility paint).
+// State switching is via the button below, not a parm-change callback.
 static PRM_Name prm_viewportModeName("viewport_mode", "Viewport Mode");
 static PRM_Name prm_viewportModeChoices[] = {
     PRM_Name("view",              "View"),
     PRM_Name("erodibility_paint", "Erodibility Paint"),
-    PRM_Name("environment_edit",  "Environment Edit"),
     PRM_Name(0)
 };
 static PRM_ChoiceList prm_viewportModeMenu(PRM_CHOICELIST_SINGLE,
@@ -62,33 +59,6 @@ static int enterPaintCB(void* data, int /*index*/, fpreal64 /*time*/,
 }
 static PRM_Name prm_enterPaintName("enter_paint_state", "Paint Erodibility");
 
-static int enterEnvCB(void* data, int /*index*/, fpreal64 /*time*/,
-                      const PRM_Template* /*tplate*/) {
-    OP_Node* node = static_cast<OP_Node*>(data);
-    if (!node) return 0;
-    UT_String expr;
-    expr.sprintf(
-        "import hou, toolutils\n"
-        "_n = hou.node('%s')\n"
-        "if _n:\n"
-        "    _v = toolutils.sceneViewer()\n"
-        "    if _v is None:\n"
-        "        _v = hou.ui.curDesktop().paneTabOfType(hou.paneTabType.SceneViewer)\n"
-        "    if _v:\n"
-        "        try: _v.pane().setIsCurrentTab()\n"
-        "        except: pass\n"
-        "        try: _v.setPwd(_n.parent())\n"
-        "        except: pass\n"
-        "        _n.setSelected(True, clear_all_selected=True)\n"
-        "        _n.setCurrent(True, True)\n"
-        "        def _enter(_v=_v): _v.setCurrentState('sop_sanddial_environment_edit')\n"
-        "        hou.ui.postEventCallback(_enter)\n",
-        node->getFullPath().c_str());
-    PYrunPythonStatementsAndExpectNoErrors(expr.c_str());
-    return 1;
-}
-static PRM_Name prm_enterEnvName("enter_env_state", "Edit Environment");
-
 static PRM_Name prm_visualizeModeName("visualize_mode", "Particle Color Visualization");
 static PRM_Name prm_visualizeModeChoices[] = {
     PRM_Name("nothing",     "Nothing"),
@@ -98,7 +68,6 @@ static PRM_Name prm_visualizeModeChoices[] = {
     PRM_Name("normals",     "Normals"),
     PRM_Name("deflation",   "Wind Deflation"),
     PRM_Name("abrasion",    "Wind Abrasion"),
-    // PRM_Name("water",       "Water"),
     PRM_Name("total_erosion", "Total Erosion"),
     PRM_Name(0)
 };
@@ -319,15 +288,13 @@ static PRM_Default prm_folderDefaults[] = {
 };
 
 PRM_Template SOP_Sanddial::myTemplateList[] = {
-    // viewport_mode: read-only ORD indicator (same type/tokens as before so
-    // existing .hip files load cleanly).  State switching is via the buttons.
+    // viewport_mode: read-only ORD indicator.  State switching is via the button.
     PRM_Template(PRM_ORD | PRM_TYPE_INVISIBLE, 1,
                  &prm_viewportModeName, 0, &prm_viewportModeMenu),
 
     // Enter-state buttons.  Their PRM_CALLBACK runs synchronously in the UI
     // thread (not inside a cook), so setCurrentState() works immediately.
     PRM_Template(PRM_CALLBACK, 1, &prm_enterPaintName, 0, 0, 0, enterPaintCB),
-    PRM_Template(PRM_CALLBACK, 1, &prm_enterEnvName,   0, 0, 0, enterEnvCB),
 
     PRM_Template(PRM_ORD, 1, &prm_visualizeModeName, 0, &prm_visualizeModeMenu),
     PRM_Template(PRM_TOGGLE, 1, &prm_showWindName, &prm_showWindDefault),
@@ -909,17 +876,7 @@ OP_ERROR SOP_Sanddial::cookMySop(OP_Context& context) {
                     }
                 }
             }
-            else if (visualizeMode == 7) { // Water
-                GA_ROHandleF valH(gdp->findPointAttribute("water_erosion"));
-                if (valH.isValid()) {
-                    GA_Offset ptoff;
-                    GA_FOR_ALL_PTOFF(gdp, ptoff) {
-                        fpreal v = SYSclamp(valH.get(ptoff) * 100.0, 0.0, 1.0);
-                        cdH.set(ptoff, UT_Vector3(0, 0, v));
-                    }
-                }
-            }
-            else if (visualizeMode == 8) { // Total Erosion
+            else if (visualizeMode == 7) { // Total Erosion
                 GA_ROHandleF valH(gdp->findPointAttribute("total_erosion"));
                 if (valH.isValid()) {
                     GA_Offset ptoff;
