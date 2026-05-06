@@ -968,10 +968,7 @@ GU_DetailHandle SOP_Sanddial::cookMySopOutput(OP_Context& context, int outputidx
     myMesher.reconstruct(myGeo, meshGdp, myPoissonDepth,
                          (float)myPoissonScale, filter);
 
-    // LS3 subdivision smooths and fattens the mesh; for sediment that
-    // reads much larger than the yellow grain cloud and exaggerates lobes.
-    // Sandstone (second output) still gets iterative subdiv as before.
-    if (outputidx == 1 && mySubdivIterations > 0)
+    if (mySubdivIterations > 0)
         myLS3.subdivide(meshGdp, mySubdivIterations);
 
     GU_DetailHandle handle;

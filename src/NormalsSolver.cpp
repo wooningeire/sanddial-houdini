@@ -150,98 +150,27 @@ void NormalsSolver::solve(AreniteGeometry& geo) {
     // at the particle cloud boundary without requiring manual tuning.
     fpreal surfaceThreshold = maxDensity * 0.75;
 
-    // ── 4a. Sediment-aware surface check ────────────────────────────────
-    //
-    // The all-particles SPH density threshold misclassifies sediment
-    // sitting on top of dense sandstone: the rock underneath inflates
-    // the local density past the global cut-off, so genuine surface
-    // sediment gets flagged as interior.  That in turn either drops
-    // those particles from the mesher entirely or, when the mesher
-    // falls back to "feed every sediment particle", makes interior
-    // sediment (with near-zero density gradient and a default upward
-    // fallback normal) bias the reconstructed iso-surface upward,
-    // producing a sediment mesh that hovers above the ground.
-    //
-    // Switch the sediment surface test to a sediment-only grid-
-    // neighbor occupancy check: a sediment particle is on the surface
-    // iff at least one of its six face-neighbor cells contains no
-    // other live sediment.  This is independent of any density
-    // threshold and naturally handles thin layers, sparse halos, and
-    // sediment perched on sandstone.
-    auto cellHasLiveSediment = [&](int ix, int iy, int iz) -> bool {
-        if (!g.inBounds(ix, iy, iz)) return false;
-        const auto& bucket = m_particleBuckets[g.flatIndex(ix, iy, iz)];
-        for (exint nIdx : bucket) {
-            const auto& q = geo.particles(nIdx);
-            if (q.isSediment && !q.isEroded) return true;
-        }
-        return false;
-    };
-
-    // ── 4b. Detect surface particles ────────────────────────────────────
+    // ── 4. Detect surface particles via density threshold ───────────────
     for (exint i = 0; i < geo.particles.size(); ++i) {
         auto& p = geo.particles[i];
         if (p.isEroded) {
             p.isSurface = false;
             continue;
         }
-        if (p.isSediment) {
-            int ix, iy, iz;
-            if (!g.worldToGrid(p.position, ix, iy, iz)) {
-                // Out-of-grid particle: treat as surface so it isn't
-                // silently dropped by the mesher.
-                p.isSurface = true;
-                continue;
-            }
-            const bool gridSurface =
-                !cellHasLiveSediment(ix - 1, iy, iz) ||
-                !cellHasLiveSediment(ix + 1, iy, iz) ||
-                !cellHasLiveSediment(ix, iy - 1, iz) ||
-                !cellHasLiveSediment(ix, iy + 1, iz) ||
-                !cellHasLiveSediment(ix, iy, iz - 1) ||
-                !cellHasLiveSediment(ix, iy, iz + 1);
-
-            // Any live sediment within a small band of the ground plane
-            // must be visible to the Poisson mesher.  The 6-neighbour
-            // test treats a grain as "interior" when every face-adjacent
-            // cell also holds sediment; for a thin carpet on the floor
-            // that has a second layer stacked above, the lowest grains can
-            // satisfy all six checks even though they are physically
-            // resting on the ground, so they were dropped from meshing and
-            // painted a flat floor underneath them with no splats.
-            //
-            // Flag the entire ground-contact band (several voxels tall) as
-            // surface so those grains emit splats.  True interior grains
-            // sitting *above* this band remain interior and stay out of
-            // the mesher, so we do not reintroduce the old "feed every
-            // sediment particle" bias that inflated the iso-surface.
-            fpreal dyAboveGround = p.position.y() - geo.groundY;
-            // World-space floor: dx can be tiny while grains sit a few cm
-            // above geo.groundY — a pure multiplier misses them and they
-            // never become isSurface.  Straddle below-ground penetration too.
-            const fpreal groundContactBand =
-                SYSmax(20.0 * g.dx, (fpreal)0.15);
-            const fpreal belowGroundSlack =
-                SYSmax(2.0 * g.dx, (fpreal)0.02);
-            const bool groundContactLayer =
-                geo.useGroundPlane &&
-                dyAboveGround >= -belowGroundSlack &&
-                dyAboveGround <= groundContactBand;
-
-            p.isSurface = gridSurface || groundContactLayer;
-        } else {
-            p.isSurface = (densities[i] < surfaceThreshold);
-        }
+        p.isSurface = (densities[i] < surfaceThreshold);
     }
 
     // ── 5. Estimate normals for particles that may feed the mesher ──────
-    //    Computed for every surface particle and (defensively) for
-    //    every live sediment particle, regardless of whether sediment
-    //    is currently flagged as surface, so that any downstream
-    //    consumer that does iterate interior sediment still sees a
-    //    physically meaningful normal rather than a stale or default
-    //    upward fallback.  The mesher itself only consumes the normals
-    //    of particles flagged isSurface.
+    //    Surface particles are the natural candidates, but sediment
+    //    particles are *also* shipped to the Poisson mesher even when
+    //    they fail the SPH-density surface test (the surface threshold
+    //    is dominated by the deep sandstone interior, so sediment that
+    //    sits on top of -- or wedged against -- sandstone has its local
+    //    density inflated by the underlying rock and gets misclassified
+    //    as "interior").  Computing a normal for every non-eroded
+    //    sediment particle here ensures the mesher never sees stale or
+    //    default-up normals, which would otherwise fragment the
+    //    reconstructed sediment surface.
     for (exint i = 0; i < geo.particles.size(); ++i) {
         auto& p = geo.particles[i];
         if (p.isEroded) continue;
